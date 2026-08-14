@@ -1,0 +1,10 @@
+node_modules/
+
+# La base de datos y sus archivos WAL: el dato real del molino. Se respalda
+# copiando la carpeta, no se versiona.
+data/
+
+# Fuera del repositorio por decisión: notas internas y los documentos del
+# cliente (el export de AppSheet y ORDENES.pdf).
+CLAUDE.md
+referencia/

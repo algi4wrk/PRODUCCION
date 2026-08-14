@@ -1,0 +1,98 @@
+@import 'tailwindcss';
+
+/* Design tokens. Light palette on bare :root so the default (system) state
+   always has a complete definition; dark only redefines the tokens. */
+:root {
+	--bg: #f6f6f4;
+	--surface: #ffffff;
+	--border: #e2e0da;
+	--text: #1c1b18;
+	--muted: #6f6c64;
+	--accent: #6b4423; /* café */
+	--accent-soft: #f0e7df;
+	/* Prioridad. Wine rather than a signal red: the palette is warm and earthy,
+	   and a plain red here would read as danger and compete with Eliminar. */
+	--priority: #7a2231;
+	--priority-soft: #f7eef0;
+	--priority-border: #c08b98;
+}
+
+:root:not([data-theme='light']) {
+	@media (prefers-color-scheme: dark) {
+		--bg: #171614;
+		--surface: #201f1c;
+		--border: #35332e;
+		--text: #f0eee9;
+		--muted: #9a968c;
+		--accent: #c99566;
+		--accent-soft: #2b241d;
+		--priority: #e3a7b2;
+		--priority-soft: #2e1a1f;
+		--priority-border: #7a4450;
+	}
+}
+
+:root[data-theme='dark'] {
+	--bg: #171614;
+	--surface: #201f1c;
+	--border: #35332e;
+	--text: #f0eee9;
+	--muted: #9a968c;
+	--accent: #c99566;
+	--accent-soft: #2b241d;
+	--priority: #e3a7b2;
+	--priority-soft: #2e1a1f;
+	--priority-border: #7a4450;
+}
+
+@theme inline {
+	--color-bg: var(--bg);
+	--color-surface: var(--surface);
+	--color-border: var(--border);
+	--color-text: var(--text);
+	--color-muted: var(--muted);
+	--color-accent: var(--accent);
+	--color-accent-soft: var(--accent-soft);
+	--color-priority: var(--priority);
+	--color-priority-soft: var(--priority-soft);
+	--color-priority-border: var(--priority-border);
+}
+
+/*
+ * Fullscreen (the floor board on a wall monitor): drop the app chrome and the
+ * page margins so the table gets the whole screen. Driven by :fullscreen, so no
+ * state has to be shared between the layout and the page.
+ */
+html:fullscreen [data-app-nav] {
+	display: none;
+}
+
+/* No page margins at all: on a wall monitor every pixel is a row. */
+html:fullscreen main {
+	padding: 0;
+	max-width: none;
+}
+
+/* The board's own title row still needs breathing room, since main no longer
+   supplies any. */
+html:fullscreen [data-board-header] {
+	padding: 0.5rem 0.75rem;
+	margin-bottom: 0;
+}
+
+/* And the table meets the screen edges rather than sitting in a card. */
+html:fullscreen [data-board-card] {
+	border-width: 1px 0 0 0;
+	border-radius: 0;
+}
+
+html,
+body {
+	background: var(--bg);
+	color: var(--text);
+}
+
+body {
+	font-family:
+		ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+}
