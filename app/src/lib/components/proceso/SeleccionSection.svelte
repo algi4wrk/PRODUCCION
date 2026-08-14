@@ -16,6 +16,7 @@
 
 	let {
 		title,
+		stage,
 		events,
 		lots,
 		staff,
@@ -23,6 +24,8 @@
 		readonly = false
 	}: {
 		title: string;
+		/** Which sorting this section lists. */
+		stage: 'VERDE' | 'TOSTADO';
 		events: SeleccionRow[];
 		/** Omitted on a lot's own page, where there is nothing to pick between. */
 		lots?: readonly SeleccionLotOption[];
@@ -68,17 +71,24 @@
 					 * client may have asked to keep — then they leave in a lot of their
 					 * own instead of becoming merma.
 					 */
-					shown.stage === 'TOSTADO'
-						? {
-								label: 'Quakers',
-								value: `${formatKilos(shown.totalKilos - shown.netKilos)} kg${
-									shown.quakerKilos === null ? ' · merma' : ' · a su propio lote'
-								}`
-							}
-						: {
-								label: 'Defectos',
-								value: `${formatKilos(shown.totalKilos - shown.netKilos)} kg · merma`
-							},
+					{
+						label: shown.stage === 'TOSTADO' ? 'Quakers' : 'Defectos',
+						value: `${formatKilos(shown.removedKilos)} kg`
+					},
+					/*
+					 * Only when it went somewhere. Coffee picked out and not kept is
+					 * merma by definition — that is what "defectos" means — so a line
+					 * saying so is a line saying nothing.
+					 */
+					...(shown.createdLots[0]
+						? [
+								{
+									label: 'Destino de lo retirado',
+									value: shown.createdLots[0].label,
+									href: linkUnlessHere(`/lotes/${shown.createdLots[0].code}`)
+								}
+							]
+						: []),
 					// The name leads to the person, the same way the lot leads to the lot.
 					{
 						label: 'Responsable',
@@ -100,8 +110,10 @@
 		{ key: 'lot', label: 'Lote' },
 		{ key: 'total', label: 'Entra', unit: 'kg', numeric: true },
 		{ key: 'net', label: 'Seleccionado', unit: 'kg', numeric: true },
-		{ key: 'removed', label: 'Retirado', unit: 'kg', numeric: true },
-		{ key: 'fate', label: 'Destino de lo retirado' },
+		{ key: 'removed', label: stage === 'TOSTADO' ? 'Quakers' : 'Defectos', unit: 'kg', numeric: true },
+		// Only where it can go anywhere: green defects are merma by definition, so
+		// the column would say the same word on every row.
+		...(stage === 'TOSTADO' ? [{ key: 'fate', label: 'Destino de lo retirado' }] : []),
 		{ key: 'staff', label: 'Responsable' }
 	]);
 
@@ -112,8 +124,10 @@
 			lot: event.lot,
 			total: formatKilos(event.totalKilos),
 			net: formatKilos(event.netKilos),
-			removed: formatKilos(event.totalKilos - event.netKilos),
-			fate: event.quakerKilos === null ? 'Merma' : 'Lote de quakers',
+			removed: formatKilos(event.removedKilos),
+			// The lot itself, which says both that the quakers were kept and which
+			// lot they are in.
+			fate: event.createdLots[0]?.label ?? 'Merma',
 			staff: event.staffName ?? '—'
 		}))
 	);
@@ -122,7 +136,7 @@
 <Section {title} count={events.length}>
 	{#snippet action()}
 		{#if lots && staff}
-			<SeleccionForm {lots} {staff} title="{title} — nuevo registro" />
+			<SeleccionForm {lots} {staff} {stage} title="{title} — nuevo registro" />
 		{/if}
 	{/snippet}
 
@@ -165,6 +179,7 @@
 						keepsQuakers: shown.quakerKilos !== null
 					})}
 					{staff}
+					{stage}
 					title="{title} — editar registro"
 					bind:open={editing}
 					edit={{
@@ -173,6 +188,7 @@
 							lotId: String(shown.edit.lotId),
 							totalKilos: shown.edit.totalKilos,
 							netKilos: shown.edit.netKilos,
+							removedKilos: shown.edit.removedKilos,
 							staffId: String(shown.edit.staffId),
 							notes: shown.edit.notes ?? ''
 						}

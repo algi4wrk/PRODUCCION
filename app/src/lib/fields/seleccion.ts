@@ -32,13 +32,15 @@ export type SeleccionLotOption = FieldOption & {
 export type SeleccionContext = {
 	lots: readonly SeleccionLotOption[];
 	staff: readonly FieldOption[];
+	/** Which sorting this is. Decides what the removed weight is called. */
+	stage: 'VERDE' | 'TOSTADO';
 };
 
 export function selectedLot(lots: readonly SeleccionLotOption[], row: FormRow) {
 	return lots.find((lot) => lot.value === String(row.lotId ?? ''));
 }
 
-export function seleccionFields({ lots, staff }: SeleccionContext): FieldDef[] {
+export function seleccionFields({ lots, staff, stage }: SeleccionContext): FieldDef[] {
 	const lotOf = (row: FormRow) => selectedLot(lots, row);
 
 	/** What did not come out sorted: defects, or quakers if they are kept. */
@@ -85,24 +87,59 @@ export function seleccionFields({ lots, staff }: SeleccionContext): FieldDef[] {
 			/**
 			 * What was picked out — one number, whatever becomes of it.
 			 *
-			 * Quakers and defects are the same act of picking: quakers are simply
-			 * the roasted ones. So the form asks once and the lot's AGREGAR QUAKER
-			 * decides where it goes — into a lot of its own, or into merma. Asking
-			 * twice would invite the two numbers to disagree.
+			 * Quakers and defects are the same act of picking: quakers are simply the
+			 * roasted ones. So the form asks once, the stage decides what it is
+			 * called, and the lot's AGREGAR QUAKER decides where it goes — into a lot
+			 * of its own, or into merma.
+			 *
+			 * Entered rather than derived. The difference between what went in and
+			 * what came out sorted is the right default and usually the right number,
+			 * but the two are weighed separately and a gram can go missing between
+			 * the scales; forcing them to agree would put that gram somewhere it did
+			 * not happen. What the three weights fail to account for is merma, which
+			 * is exactly what merma means.
 			 */
 			name: 'removedKilos',
 			column: 'PESO DEFECTOS (kg)',
-			label: 'Retirado',
-			type: 'computed',
-			compute: (row) => `${formatKilos(removedOf(row))} kg`,
-			computeNote: (row) => {
+			label: stage === 'TOSTADO' ? 'Quakers' : 'Defectos',
+			type: 'decimal',
+			required: true,
+			unit: 'kg',
+			validate: (value, row) => {
+				const removed = Number(value);
 				const total = Number(row.totalKilos || 0);
-				if (total <= 0) return '';
-				const share = `${((removedOf(row) / total) * 100).toFixed(1)} % de lo que entra`;
-				return lotOf(row)?.keepsQuakers
-					? `${share} · quakers, van a su propio lote`
-					: `${share} · merma`;
-			}
+				const net = Number(row.netKilos || 0);
+				if (!Number.isFinite(removed) || removed < 0) return 'Ingrese el peso retirado.';
+				if (net + removed - total > 0.0005) {
+					return `Lo seleccionado y lo retirado (${formatKilos(net + removed)} kg) superan lo que entra (${formatKilos(total)} kg).`;
+				}
+				return null;
+			},
+			hint:
+				stage === 'TOSTADO'
+					? 'Van a su propio lote si el cliente los pidió; si no, son merma.'
+					: 'Se descuentan como merma.'
+		},
+		{
+			/**
+			 * Where the quakers go, decided here rather than only in the lot's
+			 * specification.
+			 *
+			 * It opens on what the client asked for — AGREGAR QUAKER on the lot — so
+			 * the usual case is reading it, not answering it. But the call is made at
+			 * the table with the quakers in front of you, and a batch bad enough to
+			 * throw away gets decided then; as a button, the form does not have to be
+			 * abandoned to go and edit the lot first.
+			 *
+			 * Only on the roasted side: green coffee has no quakers, and its defects
+			 * are merma and nothing else.
+			 */
+			name: 'keepQuaker',
+			column: 'AGREGAR QUAKER',
+			label: 'Guardar quaker',
+			type: 'yesno',
+			visible: () => stage === 'TOSTADO',
+			hint: 'Sí: salen a su propio lote. No: son merma.'
 		},
 		{
 			name: 'staffId',
@@ -125,5 +162,13 @@ export function seleccionFields({ lots, staff }: SeleccionContext): FieldDef[] {
 
 /** A blank selección row. Weights fill in when a lot is chosen. */
 export function blankSeleccion(): FormRow {
-	return { lotId: '', totalKilos: null, netKilos: null, staffId: '', notes: '' };
+	return {
+		lotId: '',
+		totalKilos: null,
+		netKilos: null,
+		removedKilos: null,
+		keepQuaker: false,
+		staffId: '',
+		notes: ''
+	};
 }

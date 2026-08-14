@@ -44,10 +44,9 @@ export const LOT_STATES = [
 	'AV SELECCIONADO',
 	'EN PROCESO SELECCION',
 	'EN PROCESO TOSTION',
-	'EN PROCESO TST/SEL',
+	'EN PROCESO SEL-TST',
 	'TOSTADO',
 	'TST SELECCIONADO',
-	'MOLIDO CON QUAKER',
 	'EN PROCESO EMPAQUE',
 	'EMPACADO',
 	'COMBINADO'
@@ -118,7 +117,7 @@ export function lotStatus(
 	if (!isEmpty(green) && !isEmpty(roasted)) return 'EN PROCESO TOSTION';
 
 	if (!isEmpty(roasted)) {
-		if (!isEmpty(balances.tostado) && !isEmpty(balances.tostadoSel)) return 'EN PROCESO TST/SEL';
+		if (!isEmpty(balances.tostado) && !isEmpty(balances.tostadoSel)) return 'EN PROCESO SEL-TST';
 		if (!isEmpty(balances.tostadoSel)) return 'TST SELECCIONADO';
 		return 'TOSTADO';
 	}
@@ -246,12 +245,22 @@ export function nextStep(
 		case 'EN PROCESO TOSTION':
 			return 'TERMINAR TOSTION';
 
-		case 'EN PROCESO TST/SEL':
-			return 'TERMINAR SELECCION/TOSTION';
+		case 'EN PROCESO SEL-TST':
+			// Half the roasted coffee is sorted and half is not, so the only thing
+			// left to do is finish sorting it. The old wording came from the days
+			// when this state also stood for a lot caught between the roaster and
+			// the sorting table, which is EN PROCESO TOSTION now.
+			return 'TERMINAR SELECCION TOSTADO';
 
 		case 'TOSTADO': {
 			if (lot.selectionStages.includes('TOSTADO')) return 'SELECCION TOSTADO';
-			if (lot.addQuaker) return 'MOLER CON QUAKER/EMPACAR';
+			/*
+			 * AGREGAR QUAKER says what becomes of what a selección picks out, and
+			 * this lot is not being sorted — so it has no bearing on what happens
+			 * next. Naming quakers here said "quaker" about a lot that has none;
+			 * the only lot that should is the one made of them, which says so in
+			 * its own name.
+			 */
 			// No packaging plan means the client takes it loose.
 			if (!options.hasReferences) return 'EN GRANEL';
 			return 'MOLIENDA/EMPAQUE';
@@ -259,9 +268,6 @@ export function nextStep(
 
 		case 'TST SELECCIONADO':
 			return 'MOLIENDA/EMPAQUE';
-
-		case 'MOLIDO CON QUAKER':
-			return 'EMPAQUE';
 
 		case 'EN PROCESO EMPAQUE': {
 			// What is left loose: everything the lot holds that is not yet in bags.
@@ -295,14 +301,14 @@ export function stepTone(
 	if (step.startsWith('TRILLA')) return 'trilla';
 
 	// Sorting after the roast, including the one step that does both at once.
-	if (step.includes('SELECCION TOSTADO') || step.includes('SELECCION/TOSTION')) {
+	if (step.includes('SELECCION TOSTADO')) {
 		return 'seleccionTostado';
 	}
 	if (step.includes('SELECCION')) return 'seleccionVerde';
 
 	if (step.includes('TOSTION')) return 'tostion';
-	// "MOLER CON QUAKER/EMPACAR" lands here too: whatever is ground and whatever
-	// is bagged is on its way out the door.
+	// Grinding and bagging are the same tone: whatever is ground and whatever is
+	// bagged is on its way out the door.
 	if (
 		step.includes('EMPAQUE') ||
 		step.includes('EMPACAR') ||

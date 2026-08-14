@@ -25,6 +25,8 @@
 		lots,
 		staff,
 		title,
+		/** Which sorting this is — the removed weight is named after it. */
+		stage,
 		/** The record being rewritten. Absent when recording a new one. */
 		edit,
 		open = $bindable(false)
@@ -32,6 +34,7 @@
 		lots: readonly SeleccionLotOption[];
 		staff: readonly FieldOption[];
 		title: string;
+		stage: 'VERDE' | 'TOSTADO';
 		edit?: { id: number; row: FormRow };
 		open?: boolean;
 	} = $props();
@@ -42,7 +45,7 @@
 	/** The stacked "+ Nuevo responsable" sheet. */
 	let staffOpen = $state(false);
 
-	const fields = $derived(seleccionFields({ lots, staff }));
+	const fields = $derived(seleccionFields({ lots, staff, stage }));
 
 	function start() {
 		draft = blankSeleccion();
@@ -84,6 +87,40 @@
 		draft.totalKilos = lot.availableKilos;
 		draft.netKilos = null;
 		draft.quakerKilos = null;
+	});
+
+	/**
+	 * Keeps the removed weight on the difference as the other two are typed.
+	 *
+	 * Keyed on those two changing, not on the field being empty: it is a default,
+	 * and a default that reasserted itself would make the field impossible to
+	 * correct. Change either weight afterwards and it proposes again, which is
+	 * what someone retyping the batch expects.
+	 */
+	let lastWeights = $state('');
+
+	$effect(() => {
+		if (!open) return;
+		const key = `${draft.totalKilos}·${draft.netKilos}`;
+		if (key === lastWeights) return;
+		lastWeights = key;
+
+		const total = Number(draft.totalKilos || 0);
+		const net = Number(draft.netKilos || 0);
+		if (total > 0 && net > 0) draft.removedKilos = Math.round((total - net) * 100) / 100;
+	});
+
+	/** Choosing a lot brings what its client asked for; it stays changeable. */
+	let lastQuakerLot = $state('');
+
+	$effect(() => {
+		if (!open) return;
+		const chosen = String(draft.lotId ?? '');
+		if (chosen === lastQuakerLot) return;
+		lastQuakerLot = chosen;
+
+		const lot = lots.find((option) => option.value === chosen);
+		if (lot) draft.keepQuaker = lot.keepsQuakers;
 	});
 
 	const submit: SubmitFunction = (input) => {

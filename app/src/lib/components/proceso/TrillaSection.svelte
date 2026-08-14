@@ -83,6 +83,13 @@
 					})),
 					{ label: 'Cisco', value: `${formatKilos(shown.mermaKilos)} kg` },
 					// The name leads to the person, the same way the lot leads to the lot.
+					// The lots this event separated, each a way into what became of
+					// them: a trilla's mallas, a selección's quakers.
+					...shown.createdLots.map((lot) => ({
+						label: 'Lote separado',
+						value: lot.label,
+						href: linkUnlessHere(`/lotes/${lot.code}`)
+					})),
 					{
 						label: 'Responsable',
 						value: shown.staffName ?? '—',

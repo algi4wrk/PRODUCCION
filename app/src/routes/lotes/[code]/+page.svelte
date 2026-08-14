@@ -103,13 +103,15 @@
 		<TrillaSection events={data.trillas} />
 	{/if}
 	{#if data.sections.seleccionVerde}
-		<SeleccionSection title="Selección — Almendra verde" events={data.greenSelecciones} />
+		<SeleccionSection title="Selección — Almendra verde"
+			stage="VERDE" events={data.greenSelecciones} />
 	{/if}
 	{#if data.sections.tostion}
 		<TostionSection events={data.tostiones} />
 	{/if}
 	{#if data.sections.seleccionTostado}
-		<SeleccionSection title="Selección — Tostado" events={data.roastedSelecciones} />
+		<SeleccionSection title="Selección — Tostado"
+			stage="TOSTADO" events={data.roastedSelecciones} />
 	{/if}
 	{#if data.sections.empaque}
 		<EmpaqueSection events={data.empaques} />

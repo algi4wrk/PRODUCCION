@@ -23,6 +23,7 @@ import { ledger, lots, orders, staff, tostion } from './db/schema.ts';
 import { lotLedgerIn, postEntries } from './ledger.ts';
 import { nextEventCode } from './eventCodes.ts';
 import { validateTostion } from '../domain/validation.ts';
+import { lotStatus } from '../domain/lotState.ts';
 import type { RoastType } from '../domain/vocabulary.ts';
 import type { EventFilter } from '../domain/eventFilter.ts';
 import { conditionsFor } from './eventFilter.ts';
@@ -53,6 +54,17 @@ function writeTostion(tx: Db, input: NewTostion, code?: string): number {
 
 	const ledgerOf = lotLedgerIn(tx, lot.id);
 	const { verde, verdeSel } = ledgerOf.balances;
+
+	/**
+	 * Pergamino cannot be roasted; it has to be hulled first.
+	 *
+	 * The picker already excludes it, but a form is a convenience and this is the
+	 * thing that must not be wrong — and the balances alone cannot catch it, since
+	 * pergamino and almendra share the VERDE bucket.
+	 */
+	if (lotStatus(lot, ledgerOf) === 'CPS') {
+		throw new Error('El lote es pergamino: hay que trillarlo antes de tostarlo.');
+	}
 
 	// Which green goes in. A lot holding both sorted and unsorted green is part
 	// way through a selección, and roasting then would silently pick one.

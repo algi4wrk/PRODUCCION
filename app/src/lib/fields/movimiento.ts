@@ -11,7 +11,20 @@ import { MOVEMENT_ACTIONS, ACTIONS_CREATING_LOT } from '$lib/domain/vocabulary';
 import type { FieldDef, FieldOption, FormRow } from './types';
 
 /** A lot the operator can pick, with what it is currently holding. */
-export type LotOption = FieldOption & { availableKilos: number; status: string };
+export type LotOption = FieldOption & {
+	availableKilos: number;
+	status: string;
+	/**
+	 * What the lot is holding, bucket by bucket. One entry is the ordinary case;
+	 * two mean the operator has to say which one is moving.
+	 */
+	portions?: {
+		state: 'VERDE' | 'TOSTADO' | 'EMPACADO';
+		selected: boolean;
+		label: string;
+		kilos: number;
+	}[];
+};
 
 export type MovementContext = {
 	lots: readonly LotOption[];

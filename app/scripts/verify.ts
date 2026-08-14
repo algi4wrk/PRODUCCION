@@ -175,7 +175,7 @@ check('verde seleccionado', lotStatus(lot(), held({ verdeSel: 30 })), 'AV SELECC
 check('verde a medio seleccionar', lotStatus(lot(), held({ verde: 10, verdeSel: 20 })), 'EN PROCESO SELECCION');
 check('tostado', lotStatus(lot(), held({ tostado: 25 })), 'TOSTADO');
 check('tostado seleccionado', lotStatus(lot(), held({ tostadoSel: 25 })), 'TST SELECCIONADO');
-check('tostado a medio seleccionar', lotStatus(lot(), held({ tostado: 5, tostadoSel: 20 })), 'EN PROCESO TST/SEL');
+check('tostado a medio seleccionar', lotStatus(lot(), held({ tostado: 5, tostadoSel: 20 })), 'EN PROCESO SEL-TST');
 check('verde y tostado a la vez es tostión en proceso',
   lotStatus(lot(), held({ verde: 21, tostado: 23 })), 'EN PROCESO TOSTION');
 // El caso que un listado plano se equivocaría: el verde está en la cubeta
@@ -196,7 +196,9 @@ check('AV seleccionado -> tostión', step({ rawMaterial: 'AV' }, held({ verdeSel
 check('selección verde a medias -> terminarla', step({ rawMaterial: 'AV' }, held({ verde: 10, verdeSel: 20 })), 'TERMINAR SELECCION VERDE');
 check('en proceso tostión -> terminar', step({}, held({ verde: 10, tostado: 10 })), 'TERMINAR TOSTION');
 check('tostado con selección tostado', step({ selectionStages: ['TOSTADO'] }, held({ tostado: 25 })), 'SELECCION TOSTADO');
-check('tostado con quaker', step({ addQuaker: true }, held({ tostado: 25 })), 'MOLER CON QUAKER/EMPACAR');
+// AGREGAR QUAKER dice qué pasa con lo que retira una selección; un lote que no
+// se está seleccionando no tiene quakers de qué hablar.
+check('tostado con quaker sigue igual', step({ addQuaker: true }, held({ tostado: 25 })), 'MOLIENDA/EMPAQUE');
 check('tostado sin referencias -> granel', step({}, held({ tostado: 25 }), false), 'EN GRANEL');
 check('tostado con referencias -> molienda/empaque', step({}, held({ tostado: 25 })), 'MOLIENDA/EMPAQUE');
 check('tst seleccionado -> molienda/empaque', step({}, held({ tostadoSel: 25 })), 'MOLIENDA/EMPAQUE');
@@ -275,8 +277,9 @@ check('guardar es bodega', stepTone('GUARDAR'), 'bodega');
 check('selección verde es verde', stepTone('SELECCION VERDE'), 'seleccionVerde');
 check('terminar selección verde también', stepTone('TERMINAR SELECCION VERDE'), 'seleccionVerde');
 check('selección tostado es la otra', stepTone('SELECCION TOSTADO'), 'seleccionTostado');
-check('terminar selección/tostión va con la tostada', stepTone('TERMINAR SELECCION/TOSTION'), 'seleccionTostado');
-check('moler con quaker va con la tostada', stepTone('MOLER CON QUAKER/EMPACAR'), 'empaque');
+check('terminar selección tostado va con la tostada',
+	stepTone('TERMINAR SELECCION TOSTADO'), 'seleccionTostado');
+check('molienda y empaque comparten tono', stepTone('MOLIENDA/EMPAQUE'), 'empaque');
 
 console.log('\nContra la base de datos sembrada');
 
@@ -564,6 +567,62 @@ console.log('\nÁrbol de un lote');
 
 	// Un lote sin linaje se ve a sí mismo y nada más.
 	check('un lote solo no arrastra a nadie', focusLineage(graph, 5).nodes.length, 0);
+}
+
+console.log('\nSeparar un lote que sostiene dos cafés');
+
+{
+	const { recordSeleccion } = await import('../src/lib/server/seleccion.ts');
+	const { recordMovimiento } = await import('../src/lib/server/movimientos.ts');
+	const { lotLedger } = await import('../src/lib/server/ledger.ts');
+	const { orders: ordersTable } = await import('../src/lib/server/db/schema.ts');
+	const { eq } = await import('drizzle-orm');
+
+	const [order] = await db.select().from(ordersTable).where(eq(ordersTable.code, 'TIE-M0727A'));
+	const live = async () =>
+		(await db.select().from(lotsTable).where(eq(lotsTable.orderId, order.id)))
+			.filter((lot) => !lot.deletedAt);
+	const C = (await live()).find((lot) => lot.letter === 'C')!;
+
+	// Vale para cualquier lote con más de un balde: mitad seleccionado, mitad
+	// tostado, da igual. Aquí se prueba con la selección a medias.
+	await recordSeleccion({ lotId: C.id, totalKilos: 10, netKilos: 9.5, staffId: 1 });
+	check('queda a medio seleccionar', lotStatus(C, await lotLedger(C.id)), 'EN PROCESO SELECCION');
+
+	// Separar sin decir qué parte no tiene respuesta, y se niega.
+	let refused = false;
+	try {
+		db.transaction((tx) =>
+			recordMovimiento(tx, {
+				orderId: order.id, action: 'SEPARAR LOTE', staffId: 1,
+				legs: [{ lotId: C.id, kilos: 5 }]
+			})
+		);
+	} catch { refused = true; }
+	check('separar sin decir qué parte se niega', refused, true);
+
+	// Dicho cuál, el lote nuevo lee por el café que recibió y no por el estado
+	// del padre: AV, no EN PROCESO SELECCION.
+	db.transaction((tx) =>
+		recordMovimiento(tx, {
+			orderId: order.id, action: 'SEPARAR LOTE', staffId: 1,
+			legs: [{ lotId: C.id, kilos: 6, selected: false }]
+		})
+	);
+	const born = (await live()).find((lot) => lot.letter === 'D')!;
+	check('el lote nuevo lee por lo que recibió', lotStatus(born, await lotLedger(born.id)), 'AV');
+	check('descontado de la parte sin seleccionar',
+		Number((await lotLedger(C.id)).balances.verde.toFixed(2)), 10.4);
+
+	db.transaction((tx) =>
+		recordMovimiento(tx, {
+			orderId: order.id, action: 'SEPARAR LOTE', staffId: 1,
+			legs: [{ lotId: C.id, kilos: 4, selected: true }]
+		})
+	);
+	const sorted = (await live()).find((lot) => lot.letter === 'E')!;
+	check('separar lo seleccionado da un lote seleccionado',
+		lotStatus(sorted, await lotLedger(sorted.id)), 'AV SELECCIONADO');
 }
 
 // Los bloques de arriba escriben en la base: crean lotes, los deshacen y dejan

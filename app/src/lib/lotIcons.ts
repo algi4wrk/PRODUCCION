@@ -29,9 +29,8 @@ const MARKS: Record<string, LotMark> = {
 	TOSTADO: { icon: 'flame', class: 'text-orange-500' },
 
 	// Sorted after the roast.
-	'EN PROCESO TST/SEL': { icon: 'loader', class: 'text-violet-500' },
+	'EN PROCESO SEL-TST': { icon: 'loader', class: 'text-violet-500' },
 	'TST SELECCIONADO': { icon: 'gem', class: 'text-violet-500' },
-	'MOLIDO CON QUAKER': { icon: 'grind', class: 'text-violet-500' },
 
 	// Packing: open while being filled, shut when the order can leave.
 	'EN PROCESO EMPAQUE': { icon: 'boxOpen', class: 'text-sky-500' },

@@ -43,6 +43,7 @@
 	{#if data.greenSelecciones.length > 0}
 		<SeleccionSection
 			title="Selección — Almendra verde"
+			stage="VERDE"
 			events={data.greenSelecciones}
 			showOrder
 			readonly
@@ -54,6 +55,7 @@
 	{#if data.roastedSelecciones.length > 0}
 		<SeleccionSection
 			title="Selección — Tostado"
+			stage="TOSTADO"
 			events={data.roastedSelecciones}
 			showOrder
 			readonly

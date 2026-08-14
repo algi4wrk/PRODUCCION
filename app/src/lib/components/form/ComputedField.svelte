@@ -19,14 +19,19 @@
 	} = $props();
 </script>
 
+<!--
+	Wraps rather than overflowing: a note like "20,0 % de lo que entra · quakers,
+	van a su propio lote" is longer than the column it sits in, and `shrink-0` on
+	an unwrapped line pushed it out of the box.
+-->
 <div
-	class="flex items-baseline justify-between gap-3 rounded-md border border-dashed
-		border-border bg-bg/50 px-3 py-2 text-sm"
+	class="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 rounded-md border
+		border-dashed border-border bg-bg/50 px-3 py-2 text-sm"
 >
 	<span class="tabular-nums {tone === 'warn' ? 'text-red-600 dark:text-red-400' : 'text-text'}">
 		{text}
 	</span>
 	{#if note}
-		<span class="shrink-0 text-xs text-muted">{note}</span>
+		<span class="text-xs text-muted">{note}</span>
 	{/if}
 </div>

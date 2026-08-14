@@ -210,6 +210,8 @@ export const actions: Actions = {
 		const legs = JSON.parse(String(form.get('legs') ?? '[]')) as {
 			lotId: string;
 			kilos: number | null;
+			state?: 'VERDE' | 'TOSTADO' | 'EMPACADO';
+			selected?: boolean;
 		}[];
 
 		try {
@@ -221,7 +223,9 @@ export const actions: Actions = {
 					staffId: Number(form.get('staffId')),
 					legs: legs.map((leg) => ({
 						lotId: Number(leg.lotId),
-						kilos: Number(leg.kilos ?? 0)
+						kilos: Number(leg.kilos ?? 0),
+						state: leg.state,
+						selected: leg.selected
 					}))
 				})
 			);
@@ -284,6 +288,8 @@ export const actions: Actions = {
 		const legs = JSON.parse(String(form.get('legs') ?? '[]')) as {
 			lotId: string;
 			kilos: number | null;
+			state?: 'VERDE' | 'TOSTADO' | 'EMPACADO';
+			selected?: boolean;
 		}[];
 
 		try {
@@ -291,7 +297,12 @@ export const actions: Actions = {
 				action: String(form.get('action')) as never,
 				destinationLotId: Number(form.get('destinationLotId')) || undefined,
 				staffId: Number(form.get('staffId')),
-				legs: legs.map((leg) => ({ lotId: Number(leg.lotId), kilos: Number(leg.kilos ?? 0) }))
+				legs: legs.map((leg) => ({
+					lotId: Number(leg.lotId),
+					kilos: Number(leg.kilos ?? 0),
+					state: leg.state,
+					selected: leg.selected
+				}))
 			});
 		} catch (error) {
 			return fail(400, { error: (error as Error).message });

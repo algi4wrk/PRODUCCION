@@ -10,7 +10,7 @@ import { bags, clients, farms, lots, staff } from './db/schema.ts';
 import { clientPrefix } from '../domain/codes.ts';
 import { VARIETIES } from '../domain/vocabulary.ts';
 import { formatKilos } from '../domain/derived.ts';
-import { greenOf, NO_LEDGER, roastedOf, totalOf } from '../domain/ledger.ts';
+import { greenOf, NO_LEDGER, roastedOf, totalOf, type LotLedger } from '../domain/ledger.ts';
 import { estimatedGreenKilos } from '../domain/estimates.ts';
 import { lotLabel, lotStatus } from '../domain/lotState.ts';
 import { orderLedgers } from './ledger.ts';
@@ -132,6 +132,38 @@ export async function createClient(input: {
 	return created.id;
 }
 
+/** What a lot is holding, bucket by bucket, when it holds more than one. */
+function portionsOf(ledger: LotLedger) {
+	const held = [
+		{ state: 'VERDE' as const, selected: false, label: 'Verde', kilos: ledger.balances.verde },
+		{
+			state: 'VERDE' as const,
+			selected: true,
+			label: 'Verde seleccionado',
+			kilos: ledger.balances.verdeSel
+		},
+		{ state: 'TOSTADO' as const, selected: false, label: 'Tostado', kilos: ledger.balances.tostado },
+		{
+			state: 'TOSTADO' as const,
+			selected: true,
+			label: 'Tostado seleccionado',
+			kilos: ledger.balances.tostadoSel
+		},
+		{
+			state: 'EMPACADO' as const,
+			selected: false,
+			label: 'Empacado',
+			kilos: ledger.balances.empacado
+		}
+	].filter((portion) => portion.kilos > 0.0005);
+
+	// Always the full list, even when there is one entry: what a lot *is* —
+	// green, roasted, sorted — is the question a movimiento actually asks, and a
+	// status is only a summary of it. A lot part way through a roast holds the
+	// same roasted coffee as a lot that reads TOSTADO.
+	return held;
+}
+
 /**
  * The pickers a movimiento form needs: this order's live lots with what each is
  * holding, and the staff list.
@@ -174,7 +206,15 @@ export async function movementOptions(orderId: number) {
 					// mark from it.
 					status,
 					availableKilos: totalOf(ledger.balances),
-					hint: `${formatKilos(totalOf(ledger.balances))} kg`
+					hint: `${formatKilos(totalOf(ledger.balances))} kg`,
+					/**
+					 * The buckets this lot is holding, when it is holding more than one.
+					 *
+					 * A movimiento takes coffee, not a lot, and a lot half way through a
+					 * roast or a selección is holding two different things at once. The
+					 * form asks which; with one bucket there is nothing to ask.
+					 */
+					portions: portionsOf(ledger)
 				};
 			}),
 		staff: staffRows.map((person) => ({ value: String(person.id), label: person.name }))
@@ -239,6 +279,10 @@ export async function seleccionOptions(orderId: number, stage: 'VERDE' | 'TOSTAD
 	return lotRows
 		.filter((lot) => {
 			if (lot.storeInWarehouse) return false;
+			// Quakers are what a selección throws out; sorting them again is sorting
+			// the rejects. The lot inherits PROCESO SELECCION from the one it came
+			// out of, so nothing else would exclude it.
+			if (lot.kind === 'QUAKER') return false;
 			if (!lot.selectionStages.includes(stage)) return false;
 
 			const ledger = ledgers.get(lot.id) ?? NO_LEDGER;
@@ -252,7 +296,7 @@ export async function seleccionOptions(orderId: number, stage: 'VERDE' | 'TOSTAD
 					? status === 'AV' || status === 'EN PROCESO SELECCION'
 					: status === 'TOSTADO' ||
 						status === 'EN PROCESO TOSTION' ||
-						status === 'EN PROCESO TST/SEL';
+						status === 'EN PROCESO SEL-TST';
 
 			if (!sortableHere) return false;
 
@@ -307,7 +351,7 @@ export async function tostionOptions(orderId: number) {
 				status === 'AV' ||
 				status === 'AV SELECCIONADO' ||
 				status === 'EN PROCESO TOSTION' ||
-				status === 'EN PROCESO TST/SEL';
+				status === 'EN PROCESO SEL-TST';
 			if (!roastable) return false;
 
 			// Still owes a green selección.
@@ -351,11 +395,11 @@ export async function createStaff(input: {
  *
  *   TOSTADO · TST SELECCIONADO · MOLIDO CON QUAKER · EN PROCESO EMPAQUE
  *
- * MOLIDO CON QUAKER has no derived equivalent: it was a state of the old
- * ESTADO ACTUAL string that our buckets do not produce, since grinding is a
- * property of the presentation (MOLIENDA) rather than of the lot. EN PROCESO
- * TST/SEL takes its place in the list — a lot part way through a roasted
- * selección is holding roasted coffee, which is what the sheet was testing for.
+ * MOLIDO CON QUAKER is not carried over: it was a state of the old ESTADO
+ * ACTUAL string that our buckets cannot produce, since grinding is a property
+ * of the presentation (MOLIENDA) and not of the lot. EN PROCESO SEL-TST takes
+ * its place in the list — a lot part way through a roasted selección is holding
+ * roasted coffee, which is what the sheet was testing for.
  *
  * `availableKilos` is roasted coffee only. Green is not packable, and packed
  * coffee is already in bags.
@@ -376,7 +420,7 @@ export async function empaqueOptions(orderId: number) {
 			const packable =
 				status === 'TOSTADO' ||
 				status === 'TST SELECCIONADO' ||
-				status === 'EN PROCESO TST/SEL' ||
+				status === 'EN PROCESO SEL-TST' ||
 				status === 'EN PROCESO EMPAQUE';
 			if (!packable) return false;
 

@@ -332,6 +332,8 @@ export type TrillaRow = {
 	orderCode: string;
 	/** ID_LOTE of the lot acted on — what its link is built from. */
 	lotCode: string;
+	/** The lots this event separated, if any: one per malla, or the quakers. */
+	createdLots: { label: string; code: string }[];
 	lot: string;
 	parchmentKilos: number;
 	greenKilos: number;
@@ -358,6 +360,51 @@ export type TrillaRow = {
 	};
 };
 
+
+/**
+ * The lots each event separated, keyed by event id.
+ *
+ * A step that splits a lot does it through a movimiento, so this reads the
+ * lineage rather than guessing from the weights — and it is one query for the
+ * whole list, not one per row.
+ */
+async function createdLotsBy(
+	eventType: 'trilla' | 'seleccion',
+	ids: number[]
+): Promise<Map<number, { label: string; code: string }[]>> {
+	const created = new Map<number, { label: string; code: string }[]>();
+	if (ids.length === 0) return created;
+
+	const rows = await db
+		.select({
+			eventId: movements.eventId,
+			code: lots.code,
+			letter: lots.letter,
+			variety: lots.variety,
+			kind: lots.kind
+		})
+		.from(movements)
+		.innerJoin(lots, eq(movements.destinationLotId, lots.id))
+		.where(
+			and(
+				eq(movements.eventType, eventType),
+				inArray(movements.eventId, ids),
+				isNull(movements.deletedAt),
+				isNull(lots.deletedAt)
+			)
+		);
+
+	for (const row of rows) {
+		const list = created.get(row.eventId!) ?? [];
+		list.push({
+			label: `${row.letter} - ${row.variety}${row.kind ? ` ${row.kind}` : ''}`,
+			code: row.code
+		});
+		created.set(row.eventId!, list);
+	}
+	return created;
+}
+
 /** Every trilla of one order, newest first — or of one lot within it. */
 export async function listTrillas(filter: EventFilter): Promise<TrillaRow[]> {
 	const rows = await db
@@ -375,6 +422,11 @@ export async function listTrillas(filter: EventFilter): Promise<TrillaRow[]> {
 		.leftJoin(staff, eq(trilla.staffId, staff.id))
 		.where(and(isNull(trilla.deletedAt), ...conditionsFor(filter, trilla)));
 
+	const created = await createdLotsBy(
+		'trilla',
+		rows.map(({ event }) => event.id)
+	);
+
 	return rows
 		.map(({ event, staffName, orderCode, lotCode, letter, variety }) => {
 			const screens = SCREEN_COLUMNS.flatMap(({ screen, field }) =>
@@ -389,6 +441,7 @@ export async function listTrillas(filter: EventFilter): Promise<TrillaRow[]> {
 				orderId: event.orderId,
 				orderCode,
 				lotCode,
+				createdLots: created.get(event.id) ?? [],
 				lot: `${letter} - ${variety}`,
 				parchmentKilos: event.parchmentKilos,
 				greenKilos: event.greenKilos,

@@ -100,15 +100,26 @@ export function recordMovimiento(tx: Db, input: NewMovement): number {
     throw new Error("El peso del movimiento debe ser mayor que cero.");
 
   /**
-   * Only hand-entered movimientos are checked for mixing kinds.
+   * Mixing is checked by status or by bucket, depending on what the caller was
+   * able to say.
    *
-   * That check compares lot *statuses*, which is the right question when
-   * someone is picking lots by name off a list. A process step names the exact
-   * bucket it is moving, and its status may legitimately differ from the
-   * destination's — a lot part way through sorting reads EN PROCESO TST/SEL
-   * while the unsorted coffee it is handing over is plain TOSTADO.
+   * Statuses are the right question when someone picks whole lots off a list.
+   * They are the wrong one once a leg names its bucket: a lot part way through
+   * a roast reads EN PROCESO TOSTION while the almendra it is handing over is
+   * plain green, and refusing that would let the summary overrule the fact.
+   *
+   * What survives either way is the destination: a lot cannot be given coffee
+   * unlike what it already holds, however the origin was described.
    */
-  if (!input.event) requireSameKind(tx, originIds, input.destinationLotId);
+  const named = input.legs.every((leg) => leg.state !== undefined || leg.selected !== undefined);
+  if (!input.event) {
+    if (named) {
+      requireOneKind(input.legs);
+      requireMatchingDestination(tx, input.legs, input.destinationLotId);
+    } else {
+      requireSameKind(tx, originIds, input.destinationLotId);
+    }
+  }
 
   const [order] = tx
     .select()
@@ -189,6 +200,68 @@ export function recordMovimiento(tx: Db, input: NewMovement): number {
   );
 
   return created.id;
+}
+
+/**
+ * Refuses a combo of different coffees.
+ *
+ * The origin half of the same rule: naming buckets makes each leg precise, and
+ * two precise legs can still be almendra and tostado. A destination check does
+ * not catch it — SEPARAR and COMBINAR create their destination, so there is
+ * nothing yet to disagree with.
+ */
+function requireOneKind(legs: MovementLeg[]): void {
+  const kinds = new Set(legs.map((leg) => `${leg.state}·${leg.selected ?? false}`));
+  if (kinds.size > 1) {
+    throw new Error(
+      "No se puede mezclar café de distinta clase en un mismo movimiento.",
+    );
+  }
+}
+
+/**
+ * Refuses to pour coffee into a lot that is holding something else.
+ *
+ * The bucket-level half of `requireSameKind`, for legs that named what they are
+ * moving. An empty lot — or one this movimiento is about to create — takes
+ * whatever it is given.
+ */
+function requireMatchingDestination(
+  tx: Db,
+  legs: MovementLeg[],
+  destinationId?: number,
+): void {
+  if (!destinationId) return;
+
+  const entries = tx
+    .select()
+    .from(ledger)
+    .where(eq(ledger.lotId, destinationId))
+    .all();
+  const { balances } = summarise(entries);
+  if (isEmpty(totalOf(balances))) return;
+
+  const held = new Set(
+    (
+      [
+        ["VERDE", false, balances.verde],
+        ["VERDE", true, balances.verdeSel],
+        ["TOSTADO", false, balances.tostado],
+        ["TOSTADO", true, balances.tostadoSel],
+        ["EMPACADO", false, balances.empacado],
+      ] as const
+    )
+      .filter(([, , kilos]) => !isEmpty(kilos))
+      .map(([state, selected]) => `${state}·${selected}`),
+  );
+
+  for (const leg of legs) {
+    if (leg.state && !held.has(`${leg.state}·${leg.selected ?? false}`)) {
+      throw new Error(
+        "El lote destino tiene café de otra clase: no se pueden mezclar.",
+      );
+    }
+  }
 }
 
 /**
@@ -276,9 +349,31 @@ function resolveLeg(
   if (held.length === 0)
     throw new Error("El lote origen no tiene café disponible.");
   if (held.length > 1) {
-    throw new Error(
-      "El lote tiene café en más de un estado. Regístrelo desde el paso del proceso.",
+    /**
+     * A lot can hold coffee in more than one bucket for perfectly ordinary
+     * reasons: half of it sorted and half not, or half roasted while the rest
+     * waits for the next batch. Moving from such a lot is a real thing to want
+     * — separate the part still unroasted, hand over the part already sorted —
+     * and "move 5 kg" simply does not say which.
+     *
+     * So the leg names its bucket and this takes it from there. The new lot
+     * then holds one kind of coffee and reads by what it received rather than
+     * inheriting "en proceso" from a parent it only took half of.
+     */
+    const matches = held.filter(
+      ([state, selected]) =>
+        (leg.state === undefined || state === leg.state) &&
+        (leg.selected === undefined || selected === leg.selected),
     );
+
+    if (matches.length !== 1) {
+      throw new Error(
+        "El lote tiene café en más de un estado: indique cuál de las partes mueve.",
+      );
+    }
+
+    const [state, selected] = matches[0];
+    return { lotId: leg.lotId, state, selected, kilos: leg.kilos };
   }
 
   const [state, selected] = held[0];

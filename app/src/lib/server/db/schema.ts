@@ -311,6 +311,13 @@ export const seleccion = sqliteTable(
 		/** What came out sorted. */
 		netKilos: real('PESO NETO (kg)').notNull(),
 		/** Separated into their own lot; null when the client does not want them. */
+		/**
+		 * What was picked out, whatever became of it. Stored rather than derived:
+		 * the three weights come off separate scales, so `total − neto` is the
+		 * usual answer and not necessarily the measured one — and what the three
+		 * fail to account for is merma.
+		 */
+		removedKilos: real('PESO DEFECTOS (kg)'),
 		quakerKilos: real('QUAKERS (kg)'),
 		staffId: integer('responsable_id')
 			.notNull()

@@ -190,6 +190,7 @@
 	{#if data.sections.seleccionVerde}
 		<SeleccionSection
 			title="Selección — Almendra verde"
+			stage="VERDE"
 			events={data.greenSelecciones}
 			lots={data.greenSeleccionLots}
 			staff={data.staffOptions}
@@ -201,6 +202,7 @@
 	{#if data.sections.seleccionTostado}
 		<SeleccionSection
 			title="Selección — Tostado"
+			stage="TOSTADO"
 			events={data.roastedSelecciones}
 			lots={data.roastedSeleccionLots}
 			staff={data.staffOptions}

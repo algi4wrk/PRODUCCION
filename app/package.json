@@ -15,7 +15,8 @@
     "db:seed": "node --experimental-strip-types --conditions=svelte scripts/seed.ts",
     "db:reset": "rm -f ../data/produccion.db* && npm run db:push -- --force && npm run db:seed",
     "test:ui": "node scripts/ui-check.mjs",
-    "db:sample": "node --experimental-strip-types --conditions=svelte scripts/sample.ts"
+    "db:sample": "node --experimental-strip-types --conditions=svelte scripts/sample.ts",
+    "test:edge": "node --experimental-strip-types --conditions=svelte scripts/edge.ts"
   },
   "devDependencies": {
     "@sveltejs/adapter-auto": "^7.0.1",

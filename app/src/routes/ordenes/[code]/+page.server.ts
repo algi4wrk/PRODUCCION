@@ -368,6 +368,11 @@ export const actions: Actions = {
 				lotId: Number(row.lotId),
 				totalKilos: Number(row.totalKilos),
 				netKilos: Number(row.netKilos),
+				removedKilos:
+					row.removedKilos === undefined || row.removedKilos === null || row.removedKilos === ''
+						? undefined
+						: Number(row.removedKilos),
+				keepQuaker: row.keepQuaker === true,
 				staffId: Number(row.staffId),
 				notes: String(row.notes ?? '') || null
 			});
@@ -427,6 +432,11 @@ export const actions: Actions = {
 				lotId: Number(row.lotId),
 				totalKilos: Number(row.totalKilos),
 				netKilos: Number(row.netKilos),
+				removedKilos:
+					row.removedKilos === undefined || row.removedKilos === null || row.removedKilos === ''
+						? undefined
+						: Number(row.removedKilos),
+				keepQuaker: row.keepQuaker === true,
 				staffId: Number(row.staffId),
 				notes: String(row.notes ?? '') || null
 			});
@@ -467,6 +477,8 @@ export const actions: Actions = {
 		const legs = JSON.parse(String(form.get('legs') ?? '[]')) as {
 			lotId: string;
 			kilos: number | null;
+			state?: 'VERDE' | 'TOSTADO' | 'EMPACADO';
+			selected?: boolean;
 		}[];
 
 		try {
@@ -474,7 +486,12 @@ export const actions: Actions = {
 				action: String(form.get('action')) as never,
 				destinationLotId: Number(form.get('destinationLotId')) || undefined,
 				staffId: Number(form.get('staffId')),
-				legs: legs.map((leg) => ({ lotId: Number(leg.lotId), kilos: Number(leg.kilos ?? 0) }))
+				legs: legs.map((leg) => ({
+					lotId: Number(leg.lotId),
+					kilos: Number(leg.kilos ?? 0),
+					state: leg.state,
+					selected: leg.selected
+				}))
 			});
 		} catch (error) {
 			return fail(400, { error: (error as Error).message });
@@ -580,6 +597,8 @@ export const actions: Actions = {
 		const legs = JSON.parse(String(form.get('legs') ?? '[]')) as {
 			lotId: string;
 			kilos: number | null;
+			state?: 'VERDE' | 'TOSTADO' | 'EMPACADO';
+			selected?: boolean;
 		}[];
 
 		const id = await orderId(params.code);
@@ -595,7 +614,9 @@ export const actions: Actions = {
 					// Changing the form of the coffee is a process step's job.
 					legs: legs.map((leg) => ({
 						lotId: Number(leg.lotId),
-						kilos: Number(leg.kilos ?? 0)
+						kilos: Number(leg.kilos ?? 0),
+						state: leg.state,
+						selected: leg.selected
 					}))
 				})
 			);

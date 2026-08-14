@@ -60,8 +60,17 @@
 		open?: boolean;
 	} = $props();
 
-	/** One origin: which lot, and how much of it. */
-	type Leg = { lotId: string; kilos: number | null };
+	/**
+	 * One origin: which lot, how much of it, and — for a lot caught half way
+	 * through a selección — which of its two portions.
+	 */
+	type Leg = {
+		lotId: string;
+		kilos: number | null;
+		/** Which bucket of the lot, when it is holding more than one. */
+		state?: 'VERDE' | 'TOSTADO' | 'EMPACADO';
+		selected?: boolean;
+	};
 
 	let draft = $state<FormRow>({});
 	let legs = $state<Leg[]>([]);
@@ -91,7 +100,11 @@
 		lots.filter(
 			(lot) =>
 				!legs.some((leg) => leg.lotId === lot.value) &&
-				(!chosenStatus || lot.availableKilos === 0 || lot.status === chosenStatus)
+				(!chosenBucket ||
+					lot.availableKilos === 0 ||
+					(lot.portions ?? []).some(
+						(portion) => `${portion.state}·${portion.selected}` === chosenBucket
+					))
 		)
 	);
 
@@ -105,15 +118,46 @@
 	const liveErrors = $derived(
 		legs.map((leg) =>
 			leg.lotId && leg.kilos !== null && leg.kilos > 0
-				? (validateLegWeight(leg.kilos, availableFor(leg.lotId)) ?? '')
+				? (validateLegWeight(leg.kilos, availableFor(leg)) ?? '')
 				: ''
 		)
 	);
 
-	/** The status every other chosen lot shares, once one has been picked. */
-	const chosenStatus = $derived(
-		lots.find((lot) => lot.value === legs.find((leg) => leg.lotId)?.lotId)?.status
-	);
+	/**
+	 * The coffee already committed to, once a leg names one.
+	 *
+	 * A bucket, not a status. A status summarises a whole lot, so comparing them
+	 * refuses things that are perfectly sound: 10 kg of roasted coffee out of a
+	 * lot that reads EN PROCESO TOSTION is the same coffee as a lot reading
+	 * TOSTADO, and combining the two is what a combo is for.
+	 *
+	 * Only while there is more than one origin — with one leg there is nothing to
+	 * mix it with.
+	 */
+	/**
+	 * The coffee committed to by the *other* rows.
+	 *
+	 * A row is never narrowed by its own answer: with nothing else filled in there
+	 * is nothing to be consistent with, so every lot is offered — which is what
+	 * makes changing your mind possible. The moment another row names a coffee,
+	 * this one has to match it.
+	 *
+	 * `except` is the row asking. Omitting it asks the question for the movimiento
+	 * as a whole, which is what the destination needs.
+	 *
+	 * A row with no lot names nothing, whatever it was told earlier: otherwise
+	 * clearing the field would leave the list narrowed by a choice no longer on
+	 * screen.
+	 */
+	function bucketFor(except?: number): string | undefined {
+		return legs
+			.map((leg, index) =>
+				index !== except && leg.lotId && leg.state ? `${leg.state}·${leg.selected ?? false}` : ''
+			)
+			.find(Boolean);
+	}
+
+	const chosenBucket = $derived(bucketFor());
 
 	/**
 	 * Origins already chosen cannot be chosen twice, and every origin must hold
@@ -126,15 +170,73 @@
 	function optionsFor(index: number) {
 		const taken = legs.filter((_, i) => i !== index).map((leg) => leg.lotId);
 		const own = legs[index]?.lotId;
+		const bucket = bucketFor(index);
+
 		return lots.filter(
 			(lot) =>
 				!taken.includes(lot.value) &&
-				(!chosenStatus || lot.status === chosenStatus || lot.value === own)
+				(!bucket ||
+					lot.value === own ||
+					(lot.portions ?? []).some(
+						(portion) => `${portion.state}·${portion.selected}` === bucket
+					))
 		);
 	}
 
-	function availableFor(lotId: string): number {
-		return lots.find((lot) => lot.value === lotId)?.availableKilos ?? 0;
+	/**
+	 * A lot holding one thing needs no question, so the leg takes it as soon as
+	 * the lot is picked. That is also what lets the list be narrowed by coffee
+	 * rather than by status: every leg ends up naming its bucket.
+	 */
+	$effect(() => {
+		if (!open) return;
+		for (const leg of legs) {
+			const portions = lotFor(leg.lotId)?.portions ?? [];
+
+			// Clearing the lot clears what was chosen with it: the bucket and the
+			// weight belong to that lot, not to the row.
+			if (!leg.lotId) {
+				if (leg.state !== undefined) {
+					leg.state = undefined;
+					leg.selected = undefined;
+					leg.kilos = null;
+				}
+				continue;
+			}
+
+			// The lot changed under a bucket it does not have.
+			if (leg.state && !portions.some((p) => p.state === leg.state && p.selected === leg.selected)) {
+				leg.state = undefined;
+				leg.selected = undefined;
+				leg.kilos = null;
+			}
+
+			if (portions.length === 1 && leg.state === undefined) {
+				leg.state = portions[0].state;
+				leg.selected = portions[0].selected;
+			}
+		}
+	});
+
+	/** The lot behind a leg, if one is chosen. */
+	function lotFor(lotId: string) {
+		return lots.find((lot) => lot.value === lotId);
+	}
+
+	/**
+	 * What a leg may draw on: the whole lot, or the portion it names once the lot
+	 * turns out to be half sorted. Sorting part of a lot and then separating the
+	 * rest is ordinary; what is not ordinary is guessing which part.
+	 */
+	function availableFor(leg: Leg): number {
+		const lot = lotFor(leg.lotId);
+		if (!lot) return 0;
+		if (!lot.portions?.length) return lot.availableKilos;
+
+		const chosen = lot.portions.find(
+			(portion) => portion.state === leg.state && portion.selected === leg.selected
+		);
+		return chosen?.kilos ?? 0;
 	}
 
 	const total = $derived(legs.reduce((sum, leg) => sum + (leg.kilos ?? 0), 0));
@@ -150,6 +252,7 @@
 		// Transferir is the default: the least assuming of the three — one origin,
 		// no new lot — so opening on it never presumes more than has been said.
 		draft = { action: 'TRANSFERIR PESO', destinationLotId: '', staffId: '' };
+		lastAction = '';
 		legs = [{ lotId: lotId ? String(lotId) : '', kilos: null }];
 		lastPicked = [];
 		errors = {};
@@ -173,6 +276,9 @@
 				staffId: String(edit.staffId)
 			};
 			legs = edit.legs.map((leg) => ({ lotId: String(leg.lotId), kilos: leg.kilos }));
+			// The record's own action, so opening an edit does not read as a change
+			// and wipe the legs it just filled in.
+			lastAction = edit.action;
 			lastPicked = legs.map((leg) => leg.lotId);
 			errors = {};
 			legErrors = [];
@@ -198,13 +304,31 @@
 	 * separating collapses back to the single parent a split has by definition.
 	 * A transfer may pour from several lots but does not assume it will.
 	 */
+	let lastAction = $state('');
+
 	$effect(() => {
 		if (!open) return;
-		if (draft.action === 'COMBINAR LOTE') {
-			if (legs.length < 2) legs = [...legs, { lotId: '', kilos: null }];
-		} else if (!manyOrigins && legs.length > 1) {
-			legs = [legs[0]];
-		}
+
+		const action = String(draft.action ?? '');
+		if (action === lastAction) return;
+		lastAction = action;
+
+		/*
+		 * Changing the action starts the form again rather than carrying the old
+		 * answers across. The three actions ask different questions — a combo of
+		 * two lots is not a transfer with a spare row — so weights chosen against
+		 * one of them are answers to a question no longer being asked, and a
+		 * destination picked for a transfer means nothing to a split that creates
+		 * its own.
+		 */
+		legs = action === 'COMBINAR LOTE'
+			? [{ lotId: '', kilos: null }, { lotId: '', kilos: null }]
+			: [{ lotId: lotId ? String(lotId) : '', kilos: null }];
+		lastPicked = [];
+		draft.destinationLotId = '';
+		errors = {};
+		legErrors = [];
+		formError = '';
 	});
 
 	/**
@@ -224,7 +348,11 @@
 		legs.forEach((leg, index) => {
 			if (leg.lotId === untrack(() => lastPicked[index])) return;
 			lastPicked[index] = leg.lotId;
-			if (leg.lotId) leg.kilos = availableFor(leg.lotId);
+			// Only when the lot holds one thing: with two, the weight waits for the
+			// operator to say which of them is moving.
+			if (leg.lotId && (lotFor(leg.lotId)?.portions ?? []).length === 1) {
+				leg.kilos = availableFor(leg);
+			}
 		});
 	});
 
@@ -232,11 +360,26 @@
 	function checkLegs(): boolean {
 		legErrors = legs.map((leg) => {
 			if (!leg.lotId) return 'Seleccione el lote.';
-			return validateLegWeight(leg.kilos ?? 0, availableFor(leg.lotId)) ?? '';
+			if ((lotFor(leg.lotId)?.portions ?? []).length > 1 && leg.state === undefined) {
+				return 'Indique qué parte del lote mueve.';
+			}
+			return validateLegWeight(leg.kilos ?? 0, availableFor(leg)) ?? '';
 		});
 
 		const countError = validateOriginCount(String(draft.action), legs.length);
 		formError = countError ?? '';
+
+		/*
+		 * Different coffees in one movimiento. The server refuses it too — that is
+		 * the rule — but by then the operator has pressed a button and watched
+		 * nothing happen; the picker narrows the list for the same reason.
+		 */
+		const kinds = new Set(
+			legs.filter((leg) => leg.lotId && leg.state).map((leg) => `${leg.state}·${leg.selected}`)
+		);
+		if (kinds.size > 1) {
+			formError = 'No se puede mezclar café de distinta clase: elija la misma parte en todos los lotes.';
+		}
 
 		// A destination that is also an origin would post +x and −x on one lot.
 		if (!createsLot(draft.action) && legs.some((leg) => leg.lotId === draft.destinationLotId)) {
@@ -258,6 +401,11 @@
 		return async (opts) => {
 			if (typeof announce === 'function') await announce(opts);
 			if (opts.result.type === 'success') open = false;
+			// A refusal has to be visible: a form that closes on nothing, or sits
+			// there doing nothing, reads as the button being broken.
+			if (opts.result.type === 'failure') {
+				formError = String(opts.result.data?.error ?? 'No se pudo registrar el movimiento.');
+			}
 		};
 	};
 </script>
@@ -323,6 +471,47 @@
 								clearable
 								placeholder="Lote origen"
 							/>
+
+							<!--
+								A lot half way through a selección holds the same coffee twice
+								over: the part already sorted and the part still waiting. Both
+								are almendra, so nothing but the operator can say which one is
+								moving — and the new lot then reads AV or AV SELECCIONADO
+								rather than inheriting "en proceso" from a parent it only took
+								half of.
+							-->
+							{#if (lotFor(leg.lotId)?.portions ?? []).length > 1}
+								<!--
+									A lot holding two kinds of coffee at once — half roasted, or
+									half sorted — cannot answer "move 5 kg" on its own. It offers
+									what it has and the operator picks; the new lot then reads by
+									the coffee it received instead of inheriting "en proceso"
+									from a parent it only took part of.
+								-->
+								<div class="mt-2 flex flex-wrap gap-2">
+									{#each lotFor(leg.lotId)!.portions! as portion (portion.label)}
+										<button
+											type="button"
+											onclick={() => {
+												leg.state = portion.state;
+												leg.selected = portion.selected;
+												leg.kilos = null;
+											}}
+											aria-pressed={leg.state === portion.state &&
+												leg.selected === portion.selected}
+											class="rounded-md border px-2 py-1 text-xs transition
+												{leg.state === portion.state && leg.selected === portion.selected
+												? 'border-accent bg-accent-soft font-medium text-accent'
+												: 'border-border text-muted hover:border-accent/40'}"
+										>
+											{portion.label}
+											<span class="ml-1 tabular-nums opacity-70">
+												{formatKilos(portion.kilos)} kg
+											</span>
+										</button>
+									{/each}
+								</div>
+							{/if}
 						</div>
 
 						<div class="w-32">
@@ -345,7 +534,7 @@
 								</p>
 							{:else if leg.lotId}
 								<p class="mt-1 text-xs text-muted">
-									disponible {formatKilos(availableFor(leg.lotId))} kg
+									disponible {formatKilos(availableFor(leg))} kg
 								</p>
 							{/if}
 						</div>

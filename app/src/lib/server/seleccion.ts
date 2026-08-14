@@ -38,8 +38,22 @@ export type NewSeleccion = {
 	lotId: number;
 	/** What went in. Defaults to everything the lot holds unsorted. */
 	totalKilos: number;
-	/** What came out sorted. The rest was picked out. */
+	/** What came out sorted. */
 	netKilos: number;
+	/**
+	 * What was picked out — defects, or quakers once the coffee is roasted.
+	 *
+	 * Weighed, not inferred: the default is the difference and usually right, but
+	 * the three weights come off separate scales and what they fail to account
+	 * for is merma. Omitted, it falls back to the difference.
+	 */
+	removedKilos?: number;
+	/**
+	 * Whether the quakers are kept. Defaults to the lot's AGREGAR QUAKER — the
+	 * client's standing instruction — and the form may override it for this one
+	 * sorting, because the call is made with the quakers on the table.
+	 */
+	keepQuaker?: boolean;
 	staffId: number;
 	notes?: string | null;
 	date?: Date;
@@ -49,7 +63,7 @@ export type NewSeleccion = {
 export function stageOf(status: string): { stage: SelectionStage; state: LedgerState } {
 	return status === 'TOSTADO' ||
 		status === 'EN PROCESO TOSTION' ||
-		status === 'EN PROCESO TST/SEL' ||
+		status === 'EN PROCESO SEL-TST' ||
 		status === 'TST SELECCIONADO'
 		? { stage: 'TOSTADO', state: 'TOSTADO' }
 		: { stage: 'VERDE', state: 'VERDE' };
@@ -66,6 +80,10 @@ export function stageOf(status: string): { stage: SelectionStage; state: LedgerS
 function writeSeleccion(tx: Db, input: NewSeleccion, code?: string): number {
 	const [lot] = tx.select().from(lots).where(eq(lots.id, input.lotId)).limit(1).all();
 	if (!lot) throw new Error('El lote no existe.');
+
+	if (lot.kind === 'QUAKER') {
+		throw new Error('Los quakers ya fueron separados: no se vuelven a seleccionar.');
+	}
 
 	const ledgerOf = lotLedgerIn(tx, lot.id);
 	const { stage, state } = stageOf(lotStatus(lot, ledgerOf));
@@ -88,8 +106,19 @@ function writeSeleccion(tx: Db, input: NewSeleccion, code?: string): number {
 	 */
 	// Two decimals, like every weight in this system: the subtraction leaves
 	// float noise that would otherwise be stored and shown.
-	const removed = Math.round((input.totalKilos - input.netKilos) * 100) / 100;
-	const keepsQuakers = lot.addQuaker === true && stage === 'TOSTADO' && removed > 0.0005;
+	const removed =
+		input.removedKilos === undefined
+			? Math.round((input.totalKilos - input.netKilos) * 100) / 100
+			: Math.round(input.removedKilos * 100) / 100;
+
+	if (removed < 0 || input.netKilos + removed - input.totalKilos > 0.0005) {
+		throw new Error(
+			`Lo seleccionado y lo retirado (${(input.netKilos + removed).toFixed(2)} kg) ` +
+				`superan lo que entra (${input.totalKilos.toFixed(2)} kg).`
+		);
+	}
+	const keepsQuakers =
+		(input.keepQuaker ?? lot.addQuaker === true) && stage === 'TOSTADO' && removed > 0.0005;
 	const quakerKilos = keepsQuakers ? removed : 0;
 
 	const date = input.date ?? new Date();
@@ -111,6 +140,7 @@ function writeSeleccion(tx: Db, input: NewSeleccion, code?: string): number {
 				stage,
 				totalKilos: input.totalKilos,
 				netKilos: input.netKilos,
+				removedKilos: removed,
 				quakerKilos: keepsQuakers ? quakerKilos : null,
 				staffId: input.staffId,
 				notes: input.notes ?? null
@@ -365,11 +395,15 @@ export type SeleccionRow = {
 	orderCode: string;
 	/** ID_LOTE of the lot acted on — what its link is built from. */
 	lotCode: string;
+	/** The lot this selección separated the quakers into, when it did. */
+	createdLots: { label: string; code: string }[];
 	stage: SelectionStage;
 	lot: string;
 	totalKilos: number;
 	netKilos: number;
 	quakerKilos: number | null;
+	/** What was picked out, as weighed. */
+	removedKilos: number;
 	defectKilos: number;
 	staffName: string | null;
 	notes: string | null;
@@ -379,10 +413,56 @@ export type SeleccionRow = {
 		lotId: number;
 		totalKilos: number;
 		netKilos: number;
+		removedKilos: number;
 		staffId: number;
 		notes: string | null;
 	};
 };
+
+
+/**
+ * The lots each event separated, keyed by event id.
+ *
+ * A step that splits a lot does it through a movimiento, so this reads the
+ * lineage rather than guessing from the weights — and it is one query for the
+ * whole list, not one per row.
+ */
+async function createdLotsBy(
+	eventType: 'trilla' | 'seleccion',
+	ids: number[]
+): Promise<Map<number, { label: string; code: string }[]>> {
+	const created = new Map<number, { label: string; code: string }[]>();
+	if (ids.length === 0) return created;
+
+	const rows = await db
+		.select({
+			eventId: movements.eventId,
+			code: lots.code,
+			letter: lots.letter,
+			variety: lots.variety,
+			kind: lots.kind
+		})
+		.from(movements)
+		.innerJoin(lots, eq(movements.destinationLotId, lots.id))
+		.where(
+			and(
+				eq(movements.eventType, eventType),
+				inArray(movements.eventId, ids),
+				isNull(movements.deletedAt),
+				isNull(lots.deletedAt)
+			)
+		);
+
+	for (const row of rows) {
+		const list = created.get(row.eventId!) ?? [];
+		list.push({
+			label: `${row.letter} - ${row.variety}${row.kind ? ` ${row.kind}` : ''}`,
+			code: row.code
+		});
+		created.set(row.eventId!, list);
+	}
+	return created;
+}
 
 /** Every selección of one order at one stage, newest first. */
 export async function listSelecciones(
@@ -411,6 +491,11 @@ export async function listSelecciones(
 			)
 		);
 
+	const created = await createdLotsBy(
+		'seleccion',
+		rows.map(({ event }) => event.id)
+	);
+
 	return rows
 		.map(({ event, staffName, orderCode, lotCode, letter, variety, kind }) => ({
 			id: event.id,
@@ -419,13 +504,17 @@ export async function listSelecciones(
 			orderId: event.orderId,
 			orderCode,
 			lotCode,
+			createdLots: created.get(event.id) ?? [],
 			stage: event.stage,
 			lot: `${letter} - ${variety}${kind ? ` ${kind}` : ''}`,
 			totalKilos: event.totalKilos,
 			netKilos: event.netKilos,
 			quakerKilos: event.quakerKilos,
-			// The remainder: what was picked out and thrown away.
-			defectKilos: event.totalKilos - event.netKilos - (event.quakerKilos ?? 0),
+			// What was picked out, as weighed. Older rows predate the column and
+			// fall back to the difference, which is what they were.
+			removedKilos: event.removedKilos ?? event.totalKilos - event.netKilos,
+			defectKilos:
+				(event.removedKilos ?? event.totalKilos - event.netKilos) - (event.quakerKilos ?? 0),
 			staffName,
 			notes: event.notes,
 			canUndo: isSeleccionUndoable(db, event.id),
@@ -433,6 +522,7 @@ export async function listSelecciones(
 				lotId: event.lotId,
 				totalKilos: event.totalKilos,
 				netKilos: event.netKilos,
+				removedKilos: event.removedKilos ?? event.totalKilos - event.netKilos,
 				staffId: event.staffId,
 				notes: event.notes
 			}
