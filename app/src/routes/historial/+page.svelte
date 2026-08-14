@@ -19,6 +19,8 @@
 	import Section from '$lib/components/Section.svelte';
 	import Table from '$lib/components/Table.svelte';
 	import Form from '$lib/components/form/Form.svelte';
+	import Modal from '$lib/components/Modal.svelte';
+	import Icon from '$lib/components/Icon.svelte';
 	import { historialFields } from '$lib/fields/historial';
 	import { statusTone } from '$lib/domain/status';
 	import type { FormRow } from '$lib/fields/types';
@@ -68,6 +70,32 @@
 		});
 	});
 
+	/** The export sheet: one button, and the choice of file inside it. */
+	let exporting = $state(false);
+
+	/**
+	 * Both formats carry the query the page is showing, so the file is the view.
+	 * Excel first: it is what these are opened in.
+	 */
+	const FORMATS = [
+		{
+			format: '',
+			label: 'Excel',
+			note: 'Un libro .xlsx, con encabezado fijo y filtros por columna.'
+		},
+		{
+			format: 'csv',
+			label: 'CSV',
+			note: 'Texto separado por punto y coma, para lo que tenga que leerlo crudo.'
+		}
+	];
+
+	const exportHref = (format: string) =>
+		`/historial/export?${new URLSearchParams([
+			...page.url.searchParams,
+			...(format ? [['formato', format]] : [])
+		]).toString()}`;
+
 	const clear = () => (filter = { vista: 'ordenes', cliente: '', orden: '', estado: '', desde: '', hasta: '' });
 
 	/** True on the órdenes view, where a paused row can be resumed in place. */
@@ -86,19 +114,38 @@
 		<div class="px-4 py-4">
 			<Form {fields} bind:row={filter} idPrefix="filtro" />
 
-			<div class="mt-4 flex items-center justify-between">
+			<div class="mt-4 flex flex-wrap items-center justify-between gap-2">
 				<p class="text-sm text-muted">
 					{data.result.rows.length}
 					{data.result.rows.length === 1 ? 'registro' : 'registros'}
 				</p>
-				<button
-					type="button"
-					onclick={clear}
-					class="rounded-md border border-border px-3 py-1.5 text-sm text-muted transition
-						hover:text-text"
-				>
-					Limpiar
-				</button>
+
+				<div class="flex items-center gap-2">
+					<!--
+						A link carrying the same query the page is showing: the endpoint
+						runs it again and writes the workbook, so the file is what is on
+						screen rather than a second idea of it.
+					-->
+					<button
+						type="button"
+						onclick={() => (exporting = true)}
+						disabled={data.result.rows.length === 0}
+						class="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5
+							text-sm text-muted transition hover:text-accent
+							disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:text-muted"
+					>
+						<Icon name="download" />
+						Exportar
+					</button>
+					<button
+						type="button"
+						onclick={clear}
+						class="rounded-md border border-border px-3 py-1.5 text-sm text-muted transition
+							hover:text-text"
+					>
+						Limpiar
+					</button>
+				</div>
 			</div>
 		</div>
 	</Section>
@@ -140,3 +187,36 @@
 		/>
 	</div>
 </div>
+
+<Modal title="Exportar" bind:open={exporting}>
+	<p class="text-sm text-muted">
+		{data.result.rows.length}
+		{data.result.rows.length === 1 ? 'registro' : 'registros'}, tal como se ven aquí.
+	</p>
+
+	<div class="mt-4 flex flex-col gap-2">
+		{#each FORMATS as salida (salida.label)}
+			<!-- A link, not a fetch: the browser writes the file where they keep them. -->
+			<a
+				href={exportHref(salida.format)}
+				onclick={() => (exporting = false)}
+				class="rounded-md border border-border px-4 py-3 transition hover:border-accent/40
+					hover:bg-accent-soft/40"
+			>
+				<span class="text-sm font-medium text-text">{salida.label}</span>
+				<span class="mt-0.5 block text-xs text-muted">{salida.note}</span>
+			</a>
+		{/each}
+	</div>
+
+	<div class="mt-5">
+		<button
+			type="button"
+			onclick={() => (exporting = false)}
+			class="rounded-md border border-border px-4 py-2 text-sm text-muted transition
+				hover:text-text"
+		>
+			Cancelar
+		</button>
+	</div>
+</Modal>
