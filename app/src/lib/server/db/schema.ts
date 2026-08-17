@@ -16,6 +16,8 @@ import type {
 	ProductLine,
 	OrderStatus,
 	RawMaterial,
+	SelectionMethod,
+	SelectionMethods,
 	SelectionStage,
 	RoastType,
 	ProcessType,
@@ -143,6 +145,14 @@ export const lots = sqliteTable(
 		selectionStages: text('PROCESO SELECCION', { mode: 'json' })
 			.$type<SelectionStage[]>()
 			.notNull(),
+		/**
+		 * Which method each requested stage is to be sorted by — a map, because a
+		 * client can ask for electrónica green and manual after the roast.
+		 *
+		 * Nullable: lots recorded before this existed have no answer, and inventing
+		 * one would put a price on work nobody specified.
+		 */
+		selectionMethods: text('METODO SELECCION', { mode: 'json' }).$type<SelectionMethods>(),
 		roastType: text('TIPO DE TOSTION').$type<RoastType>().notNull(),
 		screens: text('MALLAS A SEPARAR', { mode: 'json' }).$type<Screen[]>(),
 		addQuaker: boolean('AGREGAR QUAKER'),
@@ -306,6 +316,14 @@ export const seleccion = sqliteTable(
 		date: timestamp('FECHA').notNull(),
 		/** Which side of the roast this sorting happened on. */
 		stage: text('TIPO DE CAFE').$type<SelectionStage>().notNull(),
+		/**
+		 * How this pass was sorted. Prefilled from the lot's specification and
+		 * overridable at the table, since the machine can break down.
+		 *
+		 * A pass through the machine followed by hand-picking is two events, not
+		 * one claiming both: they are two weights.
+		 */
+		method: text('METODO').$type<SelectionMethod>(),
 		/** What went in. */
 		totalKilos: real('PESO TOTAL').notNull(),
 		/** What came out sorted. */

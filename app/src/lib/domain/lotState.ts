@@ -53,8 +53,16 @@ export const LOT_STATES = [
 ] as const;
 export type LotState = (typeof LOT_STATES)[number];
 
-/** States that mean the lot is finished and should leave the floor board. */
-const CLOSED_STATES: readonly string[] = ['EMPACADO', 'COMBINADO'];
+/**
+ * States that mean the lot is gone from the floor.
+ *
+ * COMBINADO only: the coffee left for another lot, so the row would describe an
+ * empty container. EMPACADO used to be here too, and is not any more — a packed
+ * lot is finished, not absent, and the floor wants to see that the order it is
+ * working on has coffee already in bags. The board sorts those to the end of
+ * their order instead of hiding them.
+ */
+const CLOSED_STATES: readonly string[] = ['COMBINADO'];
 
 /** The lot fields these projections need. */
 export type ProjectableLot = {
@@ -253,6 +261,9 @@ export function nextStep(
 			return 'TERMINAR SELECCION TOSTADO';
 
 		case 'TOSTADO': {
+			// No test for quaker lots here: they are created with PROCESO SELECCION
+			// = NINGUNO, so their own specification already says they are not sorted
+			// again. Reading the spec is the whole job of this function.
 			if (lot.selectionStages.includes('TOSTADO')) return 'SELECCION TOSTADO';
 			/*
 			 * AGREGAR QUAKER says what becomes of what a selección picks out, and
@@ -296,7 +307,18 @@ export function nextStep(
  */
 export function stepTone(
 	step: string
-): 'trilla' | 'seleccionVerde' | 'tostion' | 'seleccionTostado' | 'empaque' | 'bodega' | 'neutral' {
+):
+	| 'trilla'
+	| 'seleccionVerde'
+	| 'tostion'
+	| 'seleccionTostado'
+	| 'empaque'
+	| 'bodega'
+	| 'terminado'
+	| 'neutral' {
+	// Before every other test: a finished lot is not a step, and TERMINADO must
+	// never fall through to a work colour.
+	if (step === 'TERMINADO') return 'terminado';
 	if (step === 'GUARDAR') return 'bodega';
 	if (step.startsWith('TRILLA')) return 'trilla';
 

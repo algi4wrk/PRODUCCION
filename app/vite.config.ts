@@ -4,6 +4,17 @@ import tailwindcss from '@tailwindcss/vite';
 import { defineConfig } from 'vite';
 
 export default defineConfig({
+	/**
+	 * Dev server only — `node build` never reads this.
+	 *
+	 * Vite rejects requests whose Host header it does not recognise, which is
+	 * what stops a phone reaching `npm run dev -- --host` by machine name. The
+	 * leading dot allows any `*.local` name, the mDNS names machines on a home
+	 * or mill network answer to; IP addresses are allowed already.
+	 */
+	server: {
+		allowedHosts: ['.local']
+	},
 	plugins: [
 		tailwindcss(),
 		sveltekit({

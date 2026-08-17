@@ -7,6 +7,8 @@
  */
 
 import type { Lot, Order, Reference } from '../server/db/schema.ts';
+import { greenOf, roastedOf, NO_LEDGER, type LotLedger } from './ledger.ts';
+import type { EventType } from './vocabulary.ts';
 
 /** Kilos a reference line represents: grams × quantity ÷ 1000. */
 export function referenceKilos(reference: Pick<Reference, 'grams' | 'quantity'>): number {
@@ -44,6 +46,51 @@ export function visibleSections(lots: Pick<Lot, 'rawMaterial' | 'selectionStages
 export type VisibleSections = ReturnType<typeof visibleSections>;
 
 /**
+ * The same sections, decided for one lot rather than for an order.
+ *
+ * An order is a plan, so its sections are its specification: a section that has
+ * nothing in it yet is saying "this coffee still needs hulling". A lot is not a
+ * plan — it is coffee in a state — and the specification it carries was written
+ * for the lot it came from. A lot born already roasted inherits TIPO DE TOSTION
+ * from its parent and would show a Tostión section forever, reading as a job
+ * nobody is ever going to do.
+ *
+ * So a lot shows a step when either
+ *
+ *   · **something was recorded** for it — history is always worth seeing; or
+ *   · **the step is still ahead of it** — its specification asks for it and it
+ *     is still holding coffee that step could consume.
+ *
+ * Coffee only moves one way — pergamino → almendra → tostado → empacado — so
+ * "still ahead" is just: does the lot hold anything at or before what that step
+ * takes in.
+ */
+export function lotSections(
+	lot: Pick<Lot, 'rawMaterial' | 'selectionStages' | 'roastType'> & { kind?: string | null },
+	ledger: LotLedger = NO_LEDGER
+) {
+	const done = (step: EventType) => ledger.events.has(step);
+	const green = greenOf(ledger.balances);
+	const roasted = roastedOf(ledger.balances);
+
+	// Pergamino is green in the ledger like almendra is, so what tells them apart
+	// is whether a trilla has run — the same question `lotStatus` asks.
+	const parchment = lot.rawMaterial === 'CPS' && !done('trilla') && green > 0;
+
+	return {
+		trilla: done('trilla') || parchment,
+		seleccionVerde: done('seleccion') || (lot.selectionStages.includes('VERDE') && green > 0),
+		tostion: done('tostion') || (lot.roastType !== 'Ninguno' && green > 0),
+		// Quakers are what a selección threw out; sorting them again is refused, so
+		// the section would only offer a form that cannot be filled.
+		seleccionTostado:
+			done('seleccion') ||
+			(lot.selectionStages.includes('TOSTADO') && roasted > 0 && lot.kind !== 'QUAKER'),
+		empaque: done('empaque') || green + roasted > 0
+	};
+}
+
+/**
  * Orders sorted for the queue: priority first, then oldest first.
  *
  * The AppSheet app stored a QUEUE number on every row and recomputed it by
@@ -65,9 +112,15 @@ export function orderLabel(order: Pick<Order, 'brand'>, clientName: string): str
 	return order.brand?.trim() ? `${order.brand} - ${clientName}` : clientName;
 }
 
-/** Formats a weight for display: two decimals, Spanish separators. */
+/**
+ * A weight for display: one decimal, and a second only when there is one.
+ *
+ * Weights are recorded to two decimals, but most of them end in a zero, and a
+ * column of `46,00` spends ink on nothing. The first decimal always shows so the
+ * digits line up; the second appears only when the scale actually said so.
+ */
 export function formatKilos(kilos: number): string {
-	return kilos.toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+	return kilos.toLocaleString('es-CO', { minimumFractionDigits: 1, maximumFractionDigits: 2 });
 }
 
 /** Formats a stored fraction (0.104) as a percentage string (10,4 %). */

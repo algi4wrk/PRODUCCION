@@ -202,11 +202,12 @@
 		{#if has(data.events.selecciones)}
 			{@render table(
 				'Selección',
-				['Fecha', 'Lote', 'Etapa', 'Entra', 'Seleccionado', 'Retirado', 'Responsable'],
+				['Fecha', 'Lote', 'Etapa', 'Método', 'Entra', 'Seleccionado', 'Retirado', 'Responsable'],
 				data.events.selecciones.map((event) => [
 					event.date,
 					event.lot,
 					event.stage,
+					event.method,
 					`${event.total} kg`,
 					`${event.net} kg`,
 					`${event.removed} kg`,

@@ -54,13 +54,24 @@ export type NewSeleccion = {
 	 * sorting, because the call is made with the quakers on the table.
 	 */
 	keepQuaker?: boolean;
+	/**
+	 * How this pass was sorted. Omitted, it falls back to what the lot's
+	 * specification asks for at this stage — and stays null if it asks for
+	 * nothing, since a method nobody stated is not one to invent.
+	 */
+	method?: string | null;
 	staffId: number;
 	notes?: string | null;
 	date?: Date;
 };
 
 /** Which form of coffee a lot is holding, and therefore which bucket sorting moves. */
-export function stageOf(status: string): { stage: SelectionStage; state: LedgerState } {
+export function stageOf(status: string): {
+	// Narrower than SelectionStage: NINGUNO says a lot is not sorted, so it can
+	// never name the stage a sorting happened at.
+	stage: Exclude<SelectionStage, 'NINGUNO'>;
+	state: LedgerState;
+} {
 	return status === 'TOSTADO' ||
 		status === 'EN PROCESO TOSTION' ||
 		status === 'EN PROCESO SEL-TST' ||
@@ -138,6 +149,9 @@ function writeSeleccion(tx: Db, input: NewSeleccion, code?: string): number {
 				lotId: lot.id,
 				date,
 				stage,
+				// The client's instruction unless the table says otherwise; null when
+				// neither names one, which is what lots recorded before this read.
+				method: (input.method || lot.selectionMethods?.[stage] || null) as never,
 				totalKilos: input.totalKilos,
 				netKilos: input.netKilos,
 				removedKilos: removed,
@@ -216,7 +230,22 @@ function writeSeleccion(tx: Db, input: NewSeleccion, code?: string): number {
 				date,
 				legs: [{ lotId: lot.id, state, selected: false, kilos: quakerKilos }],
 				event: { type: 'seleccion', id: event.id },
-				lotOverrides: { kind: 'QUAKER' }
+				/*
+				 * A quaker lot is not sorted again — it *is* what a selección threw
+				 * out — so it is born saying so rather than inheriting PROCESO
+				 * SELECCION from the lot it came out of. Inherited, the spec asked
+				 * for a sorting the form refuses to offer, and the board named it as
+				 * the lot's next step.
+				 *
+				 * AGREGAR QUAKER goes with it: it decides where a selección's quakers
+				 * go, and this lot is having none.
+				 */
+				lotOverrides: {
+					kind: 'QUAKER',
+					selectionStages: ['NINGUNO'],
+					selectionMethods: null,
+					addQuaker: false
+				}
 			});
 		}
 
@@ -398,6 +427,8 @@ export type SeleccionRow = {
 	/** The lot this selección separated the quakers into, when it did. */
 	createdLots: { label: string; code: string }[];
 	stage: SelectionStage;
+	/** How it was sorted; null for records made before the field existed. */
+	method: string | null;
 	lot: string;
 	totalKilos: number;
 	netKilos: number;
@@ -411,6 +442,7 @@ export type SeleccionRow = {
 	/** The event as its form holds it, for editing. */
 	edit: {
 		lotId: number;
+		method: string | null;
 		totalKilos: number;
 		netKilos: number;
 		removedKilos: number;
@@ -506,6 +538,7 @@ export async function listSelecciones(
 			lotCode,
 			createdLots: created.get(event.id) ?? [],
 			stage: event.stage,
+			method: event.method,
 			lot: `${letter} - ${variety}${kind ? ` ${kind}` : ''}`,
 			totalKilos: event.totalKilos,
 			netKilos: event.netKilos,
@@ -520,6 +553,7 @@ export async function listSelecciones(
 			canUndo: isSeleccionUndoable(db, event.id),
 			edit: {
 				lotId: event.lotId,
+				method: event.method,
 				totalKilos: event.totalKilos,
 				netKilos: event.netKilos,
 				removedKilos: event.removedKilos ?? event.totalKilos - event.netKilos,

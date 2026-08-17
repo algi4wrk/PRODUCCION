@@ -41,6 +41,8 @@
 		 * Eliminar; `section` is the "+ Nuevo" button in a section header.
 		 */
 		variant = 'action',
+		/** Icon alone, for the order header where seven controls share a row. */
+		iconOnly = false,
 		/** The movimiento being rewritten. Absent when registering a new one. */
 		edit,
 		open = $bindable(false)
@@ -50,6 +52,7 @@
 		lotId?: number;
 		orderId?: number;
 		variant?: 'action' | 'section';
+		iconOnly?: boolean;
 		edit?: {
 			id: number;
 			action: string;
@@ -211,9 +214,10 @@
 				leg.kilos = null;
 			}
 
-			if (portions.length === 1 && leg.state === undefined) {
-				leg.state = portions[0].state;
-				leg.selected = portions[0].selected;
+			const movable = movableOf(leg.lotId);
+			if (movable.length === 1 && leg.state === undefined) {
+				leg.state = movable[0].state;
+				leg.selected = movable[0].selected;
 			}
 		}
 	});
@@ -221,6 +225,18 @@
 	/** The lot behind a leg, if one is chosen. */
 	function lotFor(lotId: string) {
 		return lots.find((lot) => lot.value === lotId);
+	}
+
+	/**
+	 * The parts of a lot a movimiento can actually take.
+	 *
+	 * Packed coffee is listed with the rest so the operator sees the whole lot,
+	 * but it never moves — so every question the form asks about "which part"
+	 * counts only these. A lot that is half bagged and half roasted has one
+	 * movable part, and needs no question at all.
+	 */
+	function movableOf(lotId: string) {
+		return (lotFor(lotId)?.portions ?? []).filter((portion) => portion.movable !== false);
 	}
 
 	/**
@@ -350,7 +366,7 @@
 			lastPicked[index] = leg.lotId;
 			// Only when the lot holds one thing: with two, the weight waits for the
 			// operator to say which of them is moving.
-			if (leg.lotId && (lotFor(leg.lotId)?.portions ?? []).length === 1) {
+			if (leg.lotId && movableOf(leg.lotId).length === 1) {
 				leg.kilos = availableFor(leg);
 			}
 		});
@@ -360,7 +376,7 @@
 	function checkLegs(): boolean {
 		legErrors = legs.map((leg) => {
 			if (!leg.lotId) return 'Seleccione el lote.';
-			if ((lotFor(leg.lotId)?.portions ?? []).length > 1 && leg.state === undefined) {
+			if (movableOf(leg.lotId).length > 1 && leg.state === undefined) {
 				return 'Indique qué parte del lote mueve.';
 			}
 			return validateLegWeight(leg.kilos ?? 0, availableFor(leg)) ?? '';
@@ -420,11 +436,18 @@
 	<button
 		type="button"
 		onclick={start}
-		class="flex items-center gap-1.5 rounded-md px-2 py-1 text-sm text-muted transition
-			hover:bg-accent-soft hover:text-accent"
+		title="Movimiento"
+		class="{iconOnly
+			? 'hint rounded-md p-1.5'
+			: 'flex items-center gap-1.5 rounded-md px-2 py-1 text-sm'} text-muted transition
+			hover:bg-violet-50 hover:text-violet-600 dark:hover:bg-violet-950/50"
 	>
-		<Icon name="split" />
-		Movimiento
+		<Icon name="split" size={iconOnly ? 18 : 14} />
+		{#if iconOnly}
+			<span class="sr-only">Movimiento</span>
+		{:else}
+			Movimiento
+		{/if}
 	</button>
 {/if}
 
@@ -490,25 +513,46 @@
 								-->
 								<div class="mt-2 flex flex-wrap gap-2">
 									{#each lotFor(leg.lotId)!.portions! as portion (portion.label)}
-										<button
-											type="button"
-											onclick={() => {
-												leg.state = portion.state;
-												leg.selected = portion.selected;
-												leg.kilos = null;
-											}}
-											aria-pressed={leg.state === portion.state &&
-												leg.selected === portion.selected}
-											class="rounded-md border px-2 py-1 text-xs transition
-												{leg.state === portion.state && leg.selected === portion.selected
-												? 'border-accent bg-accent-soft font-medium text-accent'
-												: 'border-border text-muted hover:border-accent/40'}"
-										>
-											{portion.label}
-											<span class="ml-1 tabular-nums opacity-70">
-												{formatKilos(portion.kilos)} kg
+										{#if portion.movable === false}
+											<!--
+												Shown, not offered. Packed coffee is still the lot's
+												weight and belongs in this list — half a lot in bags is
+												exactly what someone deciding about the other half needs
+												to see — but it cannot move: it is bagged against a line
+												of the packaging plan, and the way back is to undo the
+												empaque.
+											-->
+											<span
+												title="El café empacado no se mueve: deshaga primero el empaque."
+												class="cursor-not-allowed rounded-md border border-dashed border-border
+													px-2 py-1 text-xs text-muted/70"
+											>
+												{portion.label}
+												<span class="ml-1 tabular-nums opacity-70">
+													{formatKilos(portion.kilos)} kg
+												</span>
 											</span>
-										</button>
+										{:else}
+											<button
+												type="button"
+												onclick={() => {
+													leg.state = portion.state;
+													leg.selected = portion.selected;
+													leg.kilos = null;
+												}}
+												aria-pressed={leg.state === portion.state &&
+													leg.selected === portion.selected}
+												class="rounded-md border px-2 py-1 text-xs transition
+													{leg.state === portion.state && leg.selected === portion.selected
+													? 'border-accent bg-accent-soft font-medium text-accent'
+													: 'border-border text-muted hover:border-accent/40'}"
+											>
+												{portion.label}
+												<span class="ml-1 tabular-nums opacity-70">
+													{formatKilos(portion.kilos)} kg
+												</span>
+											</button>
+										{/if}
 									{/each}
 								</div>
 							{/if}

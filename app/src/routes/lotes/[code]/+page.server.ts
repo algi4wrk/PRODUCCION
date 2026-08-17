@@ -1,6 +1,8 @@
 import { error, fail, redirect } from '@sveltejs/kit';
 import { deleteLot, getLot, lotIdFor, updateLot } from '$lib/server/lots';
 import { db } from '$lib/server/db';
+import { lots as lotsTable } from '$lib/server/db/schema';
+import { eq } from 'drizzle-orm';
 import {
 	lineageByLot,
 	lineageGraph,
@@ -9,15 +11,36 @@ import {
 	undoMovimiento,
 	updateMovimiento
 } from '$lib/server/movimientos';
-import { createStaff, farmOptions, movementOptions, varietyOptions } from '$lib/server/lookups';
-import { listTrillas, undoTrilla } from '$lib/server/trilla';
-import { listSelecciones, undoSeleccion } from '$lib/server/seleccion';
-import { listTostiones, undoTostion } from '$lib/server/tostion';
-import { listEmpaques, undoEmpaque } from '$lib/server/empaque';
+import {
+	bagOptions,
+	createStaff,
+	empaqueOptions,
+	farmOptions,
+	movementOptions,
+	seleccionOptions,
+	tostionOptions,
+	trillaOptions,
+	varietyOptions
+} from '$lib/server/lookups';
+import { listTrillas, recordTrilla, undoTrilla, updateTrilla } from '$lib/server/trilla';
+import {
+	listSelecciones,
+	recordSeleccion,
+	undoSeleccion,
+	updateSeleccion
+} from '$lib/server/seleccion';
+import { listTostiones, recordTostion, undoTostion, updateTostion } from '$lib/server/tostion';
+import {
+	listEmpaques,
+	recordEmpaque,
+	referenceProgress,
+	undoEmpaque,
+	updateEmpaque
+} from '$lib/server/empaque';
 import { orderSourceMerma } from '$lib/server/ledger';
 import { sourceMermaFraction } from '$lib/domain/sourceMerma';
 import type { Actions } from './$types';
-import { visibleSections } from '$lib/domain/derived';
+import { lotSections } from '$lib/domain/derived';
 import type { Fact } from '$lib/components/FactGrid.svelte';
 import type { Metric } from '$lib/components/MetricStrip.svelte';
 import {
@@ -30,7 +53,8 @@ import {
 	totalKilos
 } from '$lib/domain/lotState';
 import { formatKilos, formatPercent } from '$lib/domain/derived';
-import { formatSelectionStages } from '$lib/domain/vocabulary';
+import { formatSelection } from '$lib/domain/vocabulary';
+import { selectionMethodFields, selectionMethodsOf } from '$lib/fields/lot';
 
 /**
  * Lot detail.
@@ -70,20 +94,48 @@ export async function load({ params }) {
 		varietyOptions()
 	]);
 
-	// Where this lot's coffee came from and where it went, by letter — a lot is
-	// only ever read inside its own order, so the letter identifies it.
-	const letterOf = new Map(options.lots.map((option) => [Number(option.value), option.label]));
-	// Lineage links are built from ID_LOTE, the same as every other lot link.
-	const codeOf = new Map(options.lots.map((option) => [Number(option.value), option.code]));
+	/**
+	 * The pickers the process forms need, so a step can be recorded from the lot
+	 * it is about. They list the whole order rather than this lot alone: the form
+	 * opens on this one, and being able to correct that without leaving the page
+	 * costs nothing.
+	 */
+	const [trillaLots, greenSeleccionLots, roastedSeleccionLots, tostionLots, empaqueLots, bags, plan] =
+		await Promise.all([
+			trillaOptions(lot.order.id),
+			seleccionOptions(lot.order.id, 'VERDE'),
+			seleccionOptions(lot.order.id, 'TOSTADO'),
+			tostionOptions(lot.order.id),
+			empaqueOptions(lot.order.id),
+			bagOptions(),
+			referenceProgress(lot.order.id)
+		]);
+
+	/**
+	 * Where this lot's coffee came from and where it went, by letter — a lot is
+	 * only ever read inside its own order, so the letter identifies it.
+	 *
+	 * Read from the order's lots rather than from the movimiento picker: that
+	 * list leaves out lots holding nothing, and a lot that was combined away is
+	 * precisely the kind that shows up in a lineage. Taking the names from it
+	 * turned D into a question mark on the page of the lot D helped make.
+	 */
+	const named = await db
+		.select({ id: lotsTable.id, code: lotsTable.code, letter: lotsTable.letter })
+		.from(lotsTable)
+		.where(eq(lotsTable.orderId, lot.order.id));
+
+	const letterOf = new Map(named.map((row) => [row.id, row.letter]));
+	const codeOf = new Map(named.map((row) => [row.id, row.code]));
 	const letters = (ids: number[] | undefined) =>
 		[...new Set(ids ?? [])]
-			.map((id) => letterOf.get(id)?.split(' - ')[0] ?? '?')
+			.map((id) => letterOf.get(id) ?? '?')
 			.join(', ');
 
 	/** The same lots as links: lineage is only useful if you can follow it. */
 	const lotLinks = (ids: number[] | undefined) =>
 		[...new Set(ids ?? [])].map((id) => ({
-			label: letterOf.get(id)?.split(' - ')[0] ?? '?',
+			label: letterOf.get(id) ?? '?',
 			href: `/lotes/${codeOf.get(id) ?? id}`
 		}));
 
@@ -117,11 +169,19 @@ export async function load({ params }) {
 
 	/** What the client asked to have done — the spec, not observed state. */
 	const spec: Fact[] = [
-		{ label: 'Selección', value: formatSelectionStages(lot.selectionStages) },
+		/*
+		 * One line, not two: the stages with their methods on them. A separate
+		 * Método row would name the same stages again with less in it, and a lot
+		 * with no method specified still reads exactly as it did before.
+		 */
+		{ label: 'Selección', value: formatSelection(lot.selectionStages, lot.selectionMethods) },
 		{ label: 'Tostión', value: lot.roastType },
 		{ label: 'Mallas a separar', value: lot.screens?.join(', ') || '—' },
 		{ label: 'Agregar quaker', value: lot.addQuaker === null ? '—' : lot.addQuaker ? 'Sí' : 'No' },
-		{ label: 'Guardar en bodega', value: lot.storeInWarehouse ? 'Sí' : 'No' }
+		// GUARDAR EN BODEGA is hidden for now — see the field definition. Shown
+		// only where a lot actually carries it, so an existing one still explains
+		// why no process step will take it.
+		...(lot.storeInWarehouse ? [{ label: 'Guardar en bodega', value: 'Sí' }] : [])
 	];
 
 	/**
@@ -158,6 +218,13 @@ export async function load({ params }) {
 		roastedSelecciones: roastedSel,
 		tostiones,
 		empaques,
+		trillaLots: trillaLots.lots,
+		greenSeleccionLots,
+		roastedSeleccionLots,
+		tostionLots,
+		empaqueLots,
+		bags,
+		referenceProgress: plan,
 		farms,
 		varieties,
 		// The lot's own fields, in the shape the edit form works in.
@@ -167,6 +234,7 @@ export async function load({ params }) {
 			process: lot.process,
 			humidity: lot.humidity,
 			selectionStages: lot.selectionStages,
+			...selectionMethodFields(lot.selectionMethods),
 			roastType: lot.roastType,
 			screens: lot.screens ?? [],
 			addQuaker: lot.addQuaker ?? false,
@@ -188,8 +256,8 @@ export async function load({ params }) {
 		details,
 		spec,
 		balances,
-		// This lot's own specification decides which event sections exist.
-		sections: visibleSections([lot])
+		// What this lot still needs, plus what it has already done — see lotSections.
+		sections: lotSections(lot, lot.ledger)
 	};
 }
 
@@ -311,6 +379,196 @@ export const actions: Actions = {
 		return { ok: true };
 	},
 
+	/*
+	 * The four steps, recorded from the lot they are about. Same writers as the
+	 * order page calls — one implementation, two entry points, the way movimientos
+	 * already worked.
+	 */
+	trilla: async ({ request }) => {
+		const form = await request.formData();
+		const row = JSON.parse(String(form.get('trilla') ?? '{}'));
+
+		try {
+			await recordTrilla({
+				lotId: Number(row.lotId),
+				parchmentKilos: Number(row.parchmentKilos),
+				greenKilos: Number(row.greenKilos),
+				screens: {
+					'14': Number(row.screen14) || 0,
+					'15/16': Number(row.screen1516) || 0,
+					'17/18': Number(row.screen1718) || 0
+				},
+				staffId: Number(row.staffId),
+				notes: String(row.notes ?? '') || null
+			});
+		} catch (error) {
+			return fail(400, { error: (error as Error).message });
+		}
+
+		return { ok: true };
+	},
+
+	editTrilla: async ({ request }) => {
+		const form = await request.formData();
+		const row = JSON.parse(String(form.get('trilla') ?? '{}'));
+
+		try {
+			await updateTrilla(Number(form.get('id')), {
+				lotId: Number(row.lotId),
+				parchmentKilos: Number(row.parchmentKilos),
+				greenKilos: Number(row.greenKilos),
+				screens: {
+					'14': Number(row.screen14) || 0,
+					'15/16': Number(row.screen1516) || 0,
+					'17/18': Number(row.screen1718) || 0
+				},
+				staffId: Number(row.staffId),
+				notes: String(row.notes ?? '') || null
+			});
+		} catch (error) {
+			return fail(400, { error: (error as Error).message });
+		}
+
+		return { ok: true };
+	},
+
+	seleccion: async ({ request }) => {
+		const form = await request.formData();
+		const row = JSON.parse(String(form.get('seleccion') ?? '{}'));
+
+		try {
+			await recordSeleccion({
+				lotId: Number(row.lotId),
+				totalKilos: Number(row.totalKilos),
+				netKilos: Number(row.netKilos),
+				removedKilos:
+					row.removedKilos === undefined || row.removedKilos === null || row.removedKilos === ''
+						? undefined
+						: Number(row.removedKilos),
+				keepQuaker: row.keepQuaker === true,
+				method: String(row.method ?? '') || null,
+				staffId: Number(row.staffId),
+				notes: String(row.notes ?? '') || null
+			});
+		} catch (error) {
+			return fail(400, { error: (error as Error).message });
+		}
+
+		return { ok: true };
+	},
+
+	editSeleccion: async ({ request }) => {
+		const form = await request.formData();
+		const row = JSON.parse(String(form.get('seleccion') ?? '{}'));
+
+		try {
+			await updateSeleccion(Number(form.get('id')), {
+				lotId: Number(row.lotId),
+				totalKilos: Number(row.totalKilos),
+				netKilos: Number(row.netKilos),
+				removedKilos:
+					row.removedKilos === undefined || row.removedKilos === null || row.removedKilos === ''
+						? undefined
+						: Number(row.removedKilos),
+				keepQuaker: row.keepQuaker === true,
+				method: String(row.method ?? '') || null,
+				staffId: Number(row.staffId),
+				notes: String(row.notes ?? '') || null
+			});
+		} catch (error) {
+			return fail(400, { error: (error as Error).message });
+		}
+
+		return { ok: true };
+	},
+
+	tostion: async ({ request }) => {
+		const form = await request.formData();
+		const row = JSON.parse(String(form.get('tostion') ?? '{}'));
+
+		try {
+			await recordTostion({
+				lotId: Number(row.lotId),
+				roastType: String(row.roastType) as never,
+				batchKilos: Number(row.batchKilos),
+				roastedKilos: Number(row.roastedKilos),
+				staffId: Number(row.staffId),
+				notes: String(row.notes ?? '') || null
+			});
+		} catch (error) {
+			return fail(400, { error: (error as Error).message });
+		}
+
+		return { ok: true };
+	},
+
+	editTostion: async ({ request }) => {
+		const form = await request.formData();
+		const row = JSON.parse(String(form.get('tostion') ?? '{}'));
+
+		try {
+			await updateTostion(Number(form.get('id')), {
+				lotId: Number(row.lotId),
+				roastType: String(row.roastType) as never,
+				batchKilos: Number(row.batchKilos),
+				roastedKilos: Number(row.roastedKilos),
+				staffId: Number(row.staffId),
+				notes: String(row.notes ?? '') || null
+			});
+		} catch (error) {
+			return fail(400, { error: (error as Error).message });
+		}
+
+		return { ok: true };
+	},
+
+	empaque: async ({ request }) => {
+		const form = await request.formData();
+		const row = JSON.parse(String(form.get('empaque') ?? '{}'));
+
+		try {
+			await recordEmpaque({
+				lotId: Number(row.lotId),
+				referenceId: Number(row.referenceId) || null,
+				grams: Number(row.grams),
+				quantity: Number(row.quantity),
+				grind: String(row.grind) as never,
+				bagId: Number(row.bagId) || null,
+				inspection: String(row.inspection) as never,
+				staffId: Number(row.staffId),
+				notes: String(row.notes ?? '') || null
+			});
+		} catch (error) {
+			return fail(400, { error: (error as Error).message });
+		}
+
+		return { ok: true };
+	},
+
+	editEmpaque: async ({ request }) => {
+		const form = await request.formData();
+		const row = JSON.parse(String(form.get('empaque') ?? '{}'));
+
+		try {
+			await updateEmpaque(Number(form.get('id')), {
+				lotId: Number(row.lotId),
+				referenceId: Number(row.referenceId) || null,
+				grams: Number(row.grams),
+				quantity: Number(row.quantity),
+				grind: String(row.grind) as never,
+				bagId: Number(row.bagId) || null,
+				inspection: String(row.inspection) as never,
+				staffId: Number(row.staffId),
+				notes: String(row.notes ?? '') || null
+			});
+		} catch (error) {
+			return fail(400, { error: (error as Error).message });
+		}
+
+		return { ok: true };
+	},
+
+
 	/** Creates a member of staff from any form's "+ Nuevo responsable". */
 	createStaff: async ({ request }) => {
 		const form = await request.formData();
@@ -337,6 +595,7 @@ export const actions: Actions = {
 				process: String(row.process),
 				humidity: Number(row.humidity),
 				selectionStages: row.selectionStages ?? [],
+				selectionMethods: selectionMethodsOf(row),
 				roastType: String(row.roastType),
 				screens: row.screens ?? null,
 				addQuaker: row.addQuaker ?? null,

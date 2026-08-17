@@ -133,6 +133,16 @@ export async function createClient(input: {
 }
 
 /** What a lot is holding, bucket by bucket, when it holds more than one. */
+/**
+ * What a movimiento could actually move: everything the lot holds except the
+ * part already in bags. Packed coffee is still the lot's weight — it is on the
+ * board and in the totals — but it is bagged against a line of the packaging
+ * plan, and moving it would describe bags that do not exist.
+ */
+function movableKilos(ledger: LotLedger): number {
+	return totalOf(ledger.balances) - ledger.balances.empacado;
+}
+
 function portionsOf(ledger: LotLedger) {
 	const held = [
 		{ state: 'VERDE' as const, selected: false, label: 'Verde', kilos: ledger.balances.verde },
@@ -155,7 +165,12 @@ function portionsOf(ledger: LotLedger) {
 			label: 'Empacado',
 			kilos: ledger.balances.empacado
 		}
-	].filter((portion) => portion.kilos > 0.0005);
+	]
+		.filter((portion) => portion.kilos > 0.0005)
+		// Packed coffee is shown — a lot that is half bagged should say so while
+		// someone decides what to do with the rest — but it cannot be moved, and
+		// the form draws it as a fact rather than as a choice.
+		.map((portion) => ({ ...portion, movable: portion.state !== 'EMPACADO' }));
 
 	// Always the full list, even when there is one entry: what a lot *is* —
 	// green, roasted, sorted — is the question a movimiento actually asks, and a
@@ -190,8 +205,10 @@ export async function movementOptions(orderId: number) {
 		// The other pickers already do this by asking for a specific bucket —
 		// trilla wants pergamino, tostión green, empaque roasted — and a lot at
 		// zero has none of them. This list is the general one, so it says it.
+		// A lot whose whole weight is already in bags is left out for the same
+		// reason an emptied one is: nothing can leave it and nothing can arrive.
 		lots: lotRows
-			.filter((lot) => totalOf((ledgers.get(lot.id) ?? NO_LEDGER).balances) > 0.0005)
+			.filter((lot) => movableKilos(ledgers.get(lot.id) ?? NO_LEDGER) > 0.0005)
 			.map((lot) => {
 				const ledger = ledgers.get(lot.id) ?? NO_LEDGER;
 				const status = lotStatus(lot, ledger);
@@ -205,8 +222,11 @@ export async function movementOptions(orderId: number) {
 					// balances alone cannot tell them apart — and the picker draws its
 					// mark from it.
 					status,
-					availableKilos: totalOf(ledger.balances),
-					hint: `${formatKilos(totalOf(ledger.balances))} kg`,
+					// What a movimiento may draw on — everything except what is already
+					// in bags, which is where the cap has to be for the form to refuse
+					// a leg before the server has to.
+					availableKilos: movableKilos(ledger),
+					hint: `${formatKilos(movableKilos(ledger))} kg`,
 					/**
 					 * The buckets this lot is holding, when it is holding more than one.
 					 *
@@ -314,7 +334,9 @@ export async function seleccionOptions(orderId: number, stage: 'VERDE' | 'TOSTAD
 				hint: `${formatKilos(unsorted)} kg sin seleccionar`,
 				availableKilos: unsorted,
 				// The client's standing instruction: keep the quakers, or discard them.
-				keepsQuakers: stage === 'TOSTADO' && lot.addQuaker === true
+				keepsQuakers: stage === 'TOSTADO' && lot.addQuaker === true,
+				// And how they asked this stage to be sorted, which the form opens on.
+				method: lot.selectionMethods?.[stage] ?? ''
 			};
 		});
 }

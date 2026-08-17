@@ -23,13 +23,26 @@
 	let {
 		lots,
 		staff,
+		/**
+		 * Opened from a lot's own page: that lot is the subject, so the form opens
+		 * on it instead of asking which.
+		 */
+		lotId,
 		/** The record being rewritten. Absent when recording a new one. */
 		edit,
+		/**
+		 * Whether to render the "+ Nuevo" that opens this form. False where the
+		 * caller has its own control — the next-step badge on a lot's page — so
+		 * the page does not grow a second way to do the same thing.
+		 */
+		trigger = true,
 		open = $bindable(false)
 	}: {
 		lots: readonly TrillaLotOption[];
 		staff: readonly FieldOption[];
+		lotId?: number;
 		edit?: { id: number; row: FormRow };
+		trigger?: boolean;
 		open?: boolean;
 	} = $props();
 
@@ -43,6 +56,7 @@
 
 	function start() {
 		draft = blankTrilla();
+		if (lotId) draft.lotId = String(lotId);
 		errors = {};
 		formError = '';
 		open = true;
@@ -63,6 +77,11 @@
 	 */
 	let wasOpen = $state(false);
 	$effect(() => {
+		// Opened from outside — the next-step button on the order page — so the
+		// draft has to be started here: `start()` only runs when the form's own
+		// trigger is the thing that opened it.
+		if (open && !wasOpen && !edit) start();
+
 		if (open && !wasOpen && edit) {
 			draft = { ...edit.row };
 			lastLot = String(edit.row.lotId ?? '');
@@ -112,7 +131,7 @@
 
 <!-- In edit mode the caller owns the trigger: it is a button in the detail
      modal, not a "+ Nuevo" in a section header. -->
-{#if !edit}
+{#if !edit && trigger}
 	<AddButton onclick={start} />
 {/if}
 

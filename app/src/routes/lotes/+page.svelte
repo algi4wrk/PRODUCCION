@@ -19,7 +19,7 @@
 	import LotMark from '$lib/components/LotMark.svelte';
 	import { STEP_TONES } from '$lib/stepTones';
 	import { LOT_ROW_COLUMNS } from '$lib/domain/lotRow';
-	import { onChange } from '$lib/realtime';
+	import { liveRefresh } from '$lib/realtime';
 
 	let { data } = $props();
 
@@ -59,6 +59,33 @@
 
 
 	/**
+	 * Vista amplia — the board read from across the room.
+	 *
+	 * Drops every column after Tostión and enlarges what is left. The columns
+	 * that go are the ones nobody reads at four metres: reception facts that
+	 * never change, merma, and lineage. What stays is what the floor acts on —
+	 * which lot, what it needs next, what it is holding, and how it is to be
+	 * sorted and roasted.
+	 *
+	 * Kept in `localStorage` rather than in the URL: it is a property of *this
+	 * screen*, not of what is being looked at, and the wall monitor has to come
+	 * back the way it was after a reload or a power cut without anybody driving
+	 * to the mill to press a button.
+	 */
+	const WIDE_KEY = 'lotes:vista-amplia';
+	let wide = $state(false);
+
+	// No reactive dependencies, so it runs once, on mount.
+	$effect(() => {
+		wide = localStorage.getItem(WIDE_KEY) === '1';
+	});
+
+	function toggleWide() {
+		wide = !wide;
+		localStorage.setItem(WIDE_KEY, wide ? '1' : '0');
+	}
+
+	/**
 	 * The columns come from `LOT_ROW_COLUMNS`, shared with the order page's
 	 * Materia prima table; only the widths are the board's own, since it is the
 	 * one that has a whole monitor to fill.
@@ -78,44 +105,81 @@
 		createdLots: 'w-[7%]'
 	};
 
+	/** The six that survive vista amplia, re-proportioned to fill the width. */
+	const WIDE_WIDTHS: Record<string, string> = {
+		lote: 'w-[26%]',
+		step: 'w-[22%]',
+		greenKilos: 'w-[9%]',
+		roastedKilos: 'w-[9%]',
+		selection: 'w-[14%]',
+		roastType: 'w-[20%]'
+	};
+
 	// Only the keys with a width belong on the board; the rest are the order
 	// page's business.
-	const COLUMNS = LOT_ROW_COLUMNS.filter((column) => WIDTHS[column.key]).map((column) => ({
-		...column,
-		width: WIDTHS[column.key]
-	}));
-
-	/**
-	 * Fallback refresh.
-	 *
-	 * TEMPORARY — replace with a Supabase Realtime subscription (postgres_changes
-	 * on registro and ordenes) when the app moves off SQLite, and delete this
-	 * timer. It exists only because a BroadcastChannel message is not
-	 * delivery-guaranteed, and because a second *device* would not send one.
-	 *
-	 * The immediate path is the broadcast below, which covers the actual setup:
-	 * one computer, the monitor on HDMI, two windows of the same browser.
-	 */
-	const REFRESH_MS = 15_000;
-
-	$effect(() => {
-		const timer = setInterval(() => invalidateAll(), REFRESH_MS);
-		return () => clearInterval(timer);
+	const COLUMNS = $derived.by(() => {
+		const widths = wide ? WIDE_WIDTHS : WIDTHS;
+		return LOT_ROW_COLUMNS.filter((column) => widths[column.key]).map((column) => ({
+			...column,
+			width: widths[column.key]
+		}));
 	});
 
 	/**
-	 * The immediate path: another window of this browser announces a write and
-	 * the board refetches at once. The timer above stays as the fallback, since
-	 * a broadcast is not delivery-guaranteed and a second device would not send
-	 * one at all.
+	 * The type scale, in one place: every size on the board moves together, so
+	 * the two modes are one design at two distances rather than two designs.
 	 */
-	$effect(() => onChange(() => invalidateAll()));
+	const SIZES = $derived(
+		wide
+			? {
+					table: 'text-2xl',
+					head: 'px-4 py-3 text-base',
+					cell: 'px-4 py-3.5',
+					step: 'text-lg',
+					group: 'text-lg',
+					code: 'text-base',
+					mark: 24
+				}
+			: {
+					table: 'text-sm',
+					head: 'px-3 py-2.5 text-xs',
+					cell: 'px-3 py-2',
+					step: 'text-xs',
+					group: 'text-sm',
+					code: 'text-xs',
+					mark: 16
+				}
+	);
+
+	/**
+	 * Keeps itself current: at once for other windows of this browser, and on a
+	 * timer for anything a broadcast cannot reach — the second computer, a phone.
+	 * Nobody is going to walk over to the wall monitor and press reload.
+	 *
+	 * TEMPORARY, the timer half — see `liveRefresh`. It becomes a subscription
+	 * the day a write can be announced from the server.
+	 */
+	const REFRESH_MS = 15_000;
+
+	$effect(() => liveRefresh(() => invalidateAll(), REFRESH_MS));
 </script>
 
 <div data-board-header class="mb-4 flex flex-wrap items-center justify-between gap-3">
 	<h1 class="text-xl font-semibold text-text">Lotes Activos</h1>
 	<div class="flex items-center gap-3">
 		<p class="text-sm text-muted">Actualizado {formatDate(data.refreshedAt)}</p>
+		<!-- Menos columnas y letra más grande, para leer el tablero de lejos. -->
+		<button
+			type="button"
+			onclick={toggleWide}
+			title={wide ? 'Mostrar todas las columnas' : 'Menos columnas, letra más grande'}
+			class="rounded-md border px-3 py-1.5 text-xs transition
+				{wide
+				? 'border-accent/40 text-accent'
+				: 'border-border text-muted hover:border-accent/40 hover:text-accent'}"
+		>
+			▤ Vista amplia
+		</button>
 		<FullscreenButton />
 	</div>
 </div>
@@ -126,9 +190,9 @@
 	</div>
 {:else}
 	<div data-board-card class="overflow-hidden rounded-lg border border-border bg-surface">
-		<table class="w-full table-fixed text-sm">
+		<table class="w-full table-fixed {SIZES.table}">
 			<thead class="sticky top-0 z-10 bg-surface">
-				<tr class="border-b border-border text-left text-xs tracking-wide text-muted uppercase">
+				<tr class="border-b border-border text-left tracking-wide text-muted uppercase">
 					{#each COLUMNS as column (column.key)}
 						<!--
 							Headers all align left. A faint left divider on each marks where
@@ -136,8 +200,8 @@
 							without ruling every row, which reads as noise at this size.
 						-->
 						<th
-							class="border-l border-border/50 px-3 py-2.5 font-medium first:border-l-0
-								{column.width}"
+							class="border-l border-border/50 font-medium first:border-l-0
+								{SIZES.head} {column.width}"
 						>
 							{column.label}
 						</th>
@@ -152,13 +216,22 @@
 						only says which order the rows below belong to, and the lots are what
 						the floor reads. A louder bar competes with PASO SIGUIENTE.
 					-->
-					<tr class="border-y border-border bg-border/25">
-						<td colspan={COLUMNS.length} class="px-3 py-2">
+					<tr
+						class="cursor-pointer border-y border-border bg-border/25 transition
+							hover:bg-accent-soft/40"
+						onclick={() => toggle(order.id)}
+					>
+						<td colspan={COLUMNS.length} class={SIZES.cell}>
+							<!-- svelte-ignore a11y_click_events_have_key_events -->
+							<!-- svelte-ignore a11y_no_static_element_interactions -->
 							<div class="flex flex-wrap items-center gap-2.5">
 								<!--
 									Folds an order away when the floor is not working it, so a long
-									board still fits one screen. Its own control rather than the
-									whole row, which carries a link to the order.
+									board still fits one screen.
+
+									The whole row is the control now: on a wall monitor nobody is
+									aiming at a chevron, and the order name led somewhere the board
+									is not for — this page is the floor, not the paperwork.
 								-->
 								<button
 									type="button"
@@ -170,13 +243,8 @@
 									<Icon name={collapsed.has(order.id) ? 'chevronRight' : 'chevronDown'} size={16} />
 								</button>
 
-								<a
-									href="/ordenes/{order.code}"
-									class="text-sm font-medium text-muted transition hover:text-accent"
-								>
-									{order.label}
-								</a>
-								<span class="font-mono text-xs text-muted/80">{order.code}</span>
+								<span class="font-medium text-muted {SIZES.group}">{order.label}</span>
+								<span class="font-mono text-muted/80 {SIZES.code}">{order.code}</span>
 								{#if order.priority}
 									<span
 										class="rounded-full bg-red-100 px-2 py-0.5 text-[0.7rem] font-semibold
@@ -206,7 +274,11 @@
 							<tr class="border-b border-border/60">
 								{#each COLUMNS as column (column.key)}
 									{@const value = lot[column.key as keyof typeof lot]}
-									<td class="px-3 py-2 {'numeric' in column && column.numeric ? 'tabular-nums' : ''}">
+									<td
+										class="{SIZES.cell} {'numeric' in column && column.numeric
+											? 'tabular-nums'
+											: ''}"
+									>
 										{#if column.key === 'step'}
 											<!--
 												One box around the whole step. `w-max` + an explicit newline
@@ -214,14 +286,14 @@
 												inline-block fills the column and leaves dead space right.
 											-->
 											<span
-												class="inline-block w-max rounded px-2 py-0.5 text-xs
-													font-semibold whitespace-pre-line {STEP_TONES[lot.stepTone]}"
+												class="inline-block w-max rounded px-2 py-0.5 font-semibold
+													whitespace-pre-line {SIZES.step} {STEP_TONES[lot.stepTone]}"
 											>
 												{withBreaks(String(value))}
 											</span>
 										{:else if column.key === 'lote'}
 											<span class="flex items-center gap-2 font-medium text-text">
-												<LotMark status={lot.status} size={16} />
+												<LotMark status={lot.status} size={SIZES.mark} />
 												{value}
 											</span>
 										{:else}

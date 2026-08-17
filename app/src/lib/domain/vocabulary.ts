@@ -55,6 +55,73 @@ export function formatSelectionStages(stages: readonly string[]): string {
 		.join(', ');
 }
 
+/**
+ * How the sorting is done: by hand, or through the machine.
+ *
+ * It is a working instruction and a price, not a fact about the coffee —
+ * electronically sorted coffee is sorted coffee, counted exactly as hand-picked
+ * coffee is. No calculation reads this anywhere.
+ *
+ * Stored capitalised as written, since these are new values with no legacy data
+ * behind them; only the accent is a display concern.
+ */
+export const SELECTION_METHODS = ['Manual', 'Electronica'] as const;
+export type SelectionMethod = (typeof SELECTION_METHODS)[number];
+
+/** Display labels. The stored value carries no accent; what is read does. */
+export const SELECTION_METHOD_LABELS: Record<SelectionMethod, string> = {
+	Manual: 'Manual',
+	Electronica: 'Electrónica'
+};
+
+/**
+ * The client's method per stage: a lot can ask for electrónica on the green
+ * side and manual after the roast, so it is a map, not one value.
+ */
+export type SelectionMethods = Partial<Record<'VERDE' | 'TOSTADO', SelectionMethod>>;
+
+/** Renders a stage's method for display; blank when none was specified. */
+export function formatSelectionMethod(method: string | null | undefined): string {
+	return method ? (SELECTION_METHOD_LABELS[method as SelectionMethod] ?? method) : '—';
+}
+
+/**
+ * Renders the whole map: "Verde: Electrónica · Tostado: Manual".
+ *
+ * Only the stages that carry a method appear, so a lot sorted at one stage
+ * reads as one line rather than one line and a dash.
+ */
+export function formatSelectionMethods(methods: SelectionMethods | null | undefined): string {
+	if (!methods) return '—';
+	const parts = (['VERDE', 'TOSTADO'] as const)
+		.filter((stage) => methods[stage])
+		.map((stage) => `${SELECTION_STAGE_LABELS[stage]}: ${formatSelectionMethod(methods[stage])}`);
+	return parts.join(' · ') || '—';
+}
+
+/**
+ * The whole selección specification in one line: the stages asked for, each
+ * carrying its method where one was given.
+ *
+ *   ["VERDE","TOSTADO"] + {VERDE:"Electronica"}  →  "Verde: Electrónica · Tostado"
+ *   ["NINGUNO"]                                  →  "Ninguno"
+ *
+ * The stages lead, so a stage never disappears for want of a method — which is
+ * what reading the map alone would do.
+ */
+export function formatSelection(
+	stages: readonly string[],
+	methods: SelectionMethods | null | undefined
+): string {
+	return stages
+		.map((stage) => {
+			const label = SELECTION_STAGE_LABELS[stage as SelectionStage] ?? stage;
+			const method = methods?.[stage as 'VERDE' | 'TOSTADO'];
+			return method ? `${label}: ${formatSelectionMethod(method)}` : label;
+		})
+		.join(' · ');
+}
+
 /** LOTES.TIPO DE TOSTION — the requested roast profile. */
 export const ROAST_TYPES = [
 	'Ninguno',

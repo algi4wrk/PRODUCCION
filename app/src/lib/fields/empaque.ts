@@ -200,7 +200,13 @@ export function blankEmpaque(): FormRow {
 		quantity: null,
 		grind: 'GRANO',
 		bagId: '',
-		inspection: 'Aceptado',
+		/*
+		 * Empty on purpose. An inspection that opens on "Aceptado" is one nobody
+		 * has to perform: the form would record a pass for every batch where the
+		 * operator simply moved on. Required and blank, it is a decision each
+		 * time — which is the only thing that makes the answer worth storing.
+		 */
+		inspection: '',
 		staffId: '',
 		notes: ''
 	};

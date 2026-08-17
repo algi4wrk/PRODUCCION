@@ -148,14 +148,14 @@ check('CPS honey 46 kg -> tostado 28,52 kg', await shown('Estimado tostado') ===
 // Change beneficio: the estimate must follow.
 await lot.getByRole('radio', { name: 'Natural', exact: true }).click();
 await page.waitForTimeout(250);
-check('cambiar a Natural -> trilla 32,20 kg', await shown('Estimado tras trilla') === '32,20 kg', await shown('Estimado tras trilla'));
+check('cambiar a Natural -> trilla 32,2 kg', await shown('Estimado tras trilla') === '32,2 kg', await shown('Estimado tras trilla'));
 check('natural anota merma 30 %', (await lot.innerText()).includes('merma 30 %'));
 
 // Switch to AV: trilla estimate must disappear (Show? = CPS only).
 await lot.getByRole('radio', { name: 'AV', exact: true }).click();
 await page.waitForTimeout(250);
 check('AV oculta el estimado de trilla', await shown('Estimado tras trilla') === null);
-check('AV -> tostado 36,80 kg', await shown('Estimado tostado') === '36,80 kg', await shown('Estimado tostado'));
+check('AV -> tostado 36,8 kg', await shown('Estimado tostado') === '36,8 kg', await shown('Estimado tostado'));
 
 // Finish the lot so the reference form has a budget.
 await lot.getByRole('radio', { name: 'CPS', exact: true }).click();
@@ -184,13 +184,13 @@ await page.getByRole('option', { name: '500', exact: true }).click();
 await page.locator('#ref-draft-quantity').pressSequentially('40', { delay: 5 });
 await page.locator('#ref-draft-grind').click().catch(() => {});
 await page.waitForTimeout(300);
-check('40 × 500 g -> 20,00 kg', await refShown('Peso de esta línea') === '20,00 kg', await refShown('Peso de esta línea'));
+check('40 × 500 g -> 20,0 kg', await refShown('Peso de esta línea') === '20,0 kg', await refShown('Peso de esta línea'));
 check('disponible tras la línea = 8,52 kg', await refShown('Disponible después') === '8,52 kg', await refShown('Disponible después'));
 
 // Overshoot: the remaining figure must go negative and red.
 await page.locator('#ref-draft-quantity').fill('80');
 await page.waitForTimeout(300);
-check('80 × 500 g -> 40,00 kg', await refShown('Peso de esta línea') === '40,00 kg', await refShown('Peso de esta línea'));
+check('80 × 500 g -> 40,0 kg', await refShown('Peso de esta línea') === '40,0 kg', await refShown('Peso de esta línea'));
 check('disponible se vuelve negativo', (await refShown('Disponible después') || '').startsWith('-'), await refShown('Disponible después'));
 
 
@@ -274,7 +274,7 @@ const clientCell = await row.locator('td').nth(2).boundingBox();
 await page.mouse.click(clientCell.x + clientCell.width / 2, clientCell.y + clientCell.height / 2);
 await page.waitForURL(/\/ordenes\/[A-Z]{3}-M\d{4}[A-Z]$/, { timeout: 4000 }).catch(() => {});
 check('clic en la celda de cliente abre la orden', /\/ordenes\/[A-Z]{3}-M\d{4}[A-Z]$/.test(page.url()), page.url());
-check('abre la orden correcta', (await page.locator('h1').innerText()).includes(code), code);
+check('abre la orden correcta', page.url().includes(code), `${page.url()} · ${code}`);
 
 // And the far-right status cell.
 await page.goto('http://localhost:5177/ordenes', { waitUntil: 'networkidle' });
@@ -332,7 +332,9 @@ await editDlg.waitFor({ state: 'hidden', timeout: 5000 });
 await page.waitForTimeout(400);
 check('la nota nueva aparece', (await page.locator('body').innerText()).includes('Nota corregida desde la prueba'));
 check('peel stick quedó en sí', /peel stick\s*\n?\s*Sí/i.test(await page.locator('body').innerText()));
-check('el código no cambió', (await page.locator('h1').innerText()).includes('TIE-M0727A'));
+// El código vive en la ruta sobre el título. La prueba llegó por el id viejo,
+// así que se busca en la página y no en la URL.
+check('el código no cambió', (await page.locator('body').innerText()).includes('TIE-M0727A'));
 
 // ---------------------------------------------------------------------------
 // Movimientos: el combo parcial de varios lotes, que es justo lo que la app
@@ -378,7 +380,8 @@ await page.waitForTimeout(150);
 await page.getByRole('option').first().click();
 await page.waitForTimeout(200);
 
-check('el total se suma solo', (await movDlg.innerText()).includes('11,00 kg'));
+check('el total se suma solo', (await movDlg.innerText()).includes('11,0 kg'),
+  (await movDlg.innerText()).replace(/\n/g, ' | ').slice(-120));
 
 await movDlg.getByRole('button', { name: 'Registrar' }).click();
 await movDlg.waitFor({ state: 'hidden', timeout: 5000 });
@@ -392,10 +395,10 @@ await page.goto('http://localhost:5177/lotes', { waitUntil: 'networkidle' });
 const boardText = await page.locator('body').innerText();
 check('la pared muestra el lote nuevo', /D - Castillo/.test(boardText));
 check('el lote nuevo lista sus dos orígenes', /C, B|B, C/.test(boardText));
-// El origen entregó 10 kg: su saldo baja a 16,40, pero PESO INICIAL sigue
-// siendo 26,40 — es un hecho de recepción y no cambia nunca.
-check('el saldo del origen bajó', /16,40/.test(boardText));
-check('el peso inicial del origen no cambió', /26,40/.test(boardText));
+// El origen entregó 10 kg: su saldo baja a 16,4, pero PESO INICIAL sigue
+// siendo 26,4 — es un hecho de recepción y no cambia nunca.
+check('el saldo del origen bajó', /16,4/.test(boardText));
+check('el peso inicial del origen no cambió', /26,4/.test(boardText));
 check('sin merma por mover café', !/-\d/.test(boardText));
 
 console.log(errors.length ? '\nErrores de consola:\n' + errors.slice(0,5).join('\n') : '\nSin errores de consola.');

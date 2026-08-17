@@ -24,6 +24,7 @@ import { formatSelectionStages } from './vocabulary.ts';
 export const LOT_ROW_COLUMNS = [
 	{ key: 'lote', label: 'Lote' },
 	{ key: 'step', label: 'Paso siguiente' },
+	{ key: 'action', label: '' },
 	{ key: 'greenKilos', label: 'Peso verde', numeric: true },
 	{ key: 'roastedKilos', label: 'Peso tostado', numeric: true },
 	{ key: 'selection', label: 'Selección' },

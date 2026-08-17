@@ -27,15 +27,28 @@
 		title,
 		/** Which sorting this is — the removed weight is named after it. */
 		stage,
+		/**
+		 * Opened from a lot's own page: that lot is the subject, so the form opens
+		 * on it instead of asking which.
+		 */
+		lotId,
 		/** The record being rewritten. Absent when recording a new one. */
 		edit,
+		/**
+		 * Whether to render the "+ Nuevo" that opens this form. False where the
+		 * caller has its own control — the next-step badge on a lot's page — so
+		 * the page does not grow a second way to do the same thing.
+		 */
+		trigger = true,
 		open = $bindable(false)
 	}: {
 		lots: readonly SeleccionLotOption[];
 		staff: readonly FieldOption[];
 		title: string;
 		stage: 'VERDE' | 'TOSTADO';
+		lotId?: number;
 		edit?: { id: number; row: FormRow };
+		trigger?: boolean;
 		open?: boolean;
 	} = $props();
 
@@ -49,6 +62,7 @@
 
 	function start() {
 		draft = blankSeleccion();
+		if (lotId) draft.lotId = String(lotId);
 		errors = {};
 		formError = '';
 		open = true;
@@ -65,6 +79,11 @@
 	 */
 	let wasOpen = $state(false);
 	$effect(() => {
+		// Opened from outside — the next-step button on the order page — so the
+		// draft has to be started here: `start()` only runs when the form's own
+		// trigger is the thing that opened it.
+		if (open && !wasOpen && !edit) start();
+
 		if (open && !wasOpen && edit) {
 			draft = { ...edit.row };
 			lastLot = String(edit.row.lotId ?? '');
@@ -110,17 +129,27 @@
 		if (total > 0 && net > 0) draft.removedKilos = Math.round((total - net) * 100) / 100;
 	});
 
-	/** Choosing a lot brings what its client asked for; it stays changeable. */
-	let lastQuakerLot = $state('');
+	/**
+	 * Choosing a lot brings what its client asked for; both stay changeable.
+	 *
+	 * The quaker decision and the sorting method are the same kind of answer: a
+	 * standing instruction on the lot, made again at the table with the coffee in
+	 * front of you.
+	 */
+	let lastSpecLot = $state('');
 
 	$effect(() => {
 		if (!open) return;
 		const chosen = String(draft.lotId ?? '');
-		if (chosen === lastQuakerLot) return;
-		lastQuakerLot = chosen;
+		if (chosen === lastSpecLot) return;
+		lastSpecLot = chosen;
 
 		const lot = lots.find((option) => option.value === chosen);
-		if (lot) draft.keepQuaker = lot.keepsQuakers;
+		if (!lot) return;
+		draft.keepQuaker = lot.keepsQuakers;
+		// Only when the lot names one: a lot with no method specified leaves the
+		// field empty for the operator to answer rather than proposing a guess.
+		if (lot.method) draft.method = lot.method;
 	});
 
 	const submit: SubmitFunction = (input) => {
@@ -144,7 +173,7 @@
 
 <!-- In edit mode the caller owns the trigger: it is a button in the detail
      modal, not a "+ Nuevo" in a section header. -->
-{#if !edit}
+{#if !edit && trigger}
 	<AddButton onclick={start} />
 {/if}
 

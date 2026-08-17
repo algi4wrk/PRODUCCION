@@ -23,7 +23,7 @@
 	import { clientFields } from '$lib/fields/client';
 	import { farmFields } from '$lib/fields/farm';
 	import { clientPrefix } from '$lib/domain/codes';
-	import { lotFields, blankLot, LOT_SUMMARY_COLUMNS } from '$lib/fields/lot';
+	import { lotFields, blankLot, selectionMethodsOf, LOT_SUMMARY_COLUMNS } from '$lib/fields/lot';
 	import { referenceFields, blankReference, REFERENCE_SUMMARY_COLUMNS } from '$lib/fields/reference';
 	import { validateRow, type FieldOption, type FormRow } from '$lib/fields/types';
 	import type { BagOption } from '$lib/fields/reference';
@@ -202,6 +202,9 @@
 				humidity: Number(lot.humidity) / 100,
 				farmId: lot.farmId ? Number(lot.farmId) : null,
 				selectionStages: lot.selectionStages,
+				// The two method fields become the stored map here, where the rest of
+				// the row is converted for the server.
+				selectionMethods: selectionMethodsOf(lot),
 				roastType: lot.roastType,
 				screens: lot.screens,
 				addQuaker: lot.addQuaker,

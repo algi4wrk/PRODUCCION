@@ -125,6 +125,74 @@ await refuses('transferir sin destino', () =>
 		recordMovimiento(tx, { orderId: order.id, action: 'TRANSFERIR PESO', staffId: 1, legs: [{ lotId: B.id, kilos: 0.5 }] })
 	)
 );
+/*
+ * Café empacado. Se tuesta y se empaca una parte de C, y luego se intenta mover
+ * lo empacado: ni nombrando el balde ni dejando que el sistema lo deduzca — con
+ * todo empacado no queda otra cosa que mover. El bloque deshace lo suyo.
+ */
+{
+	const tostion = await recordTostion({
+		lotId: C.id, roastType: 'Media/Media - City', batchKilos: 10, roastedKilos: 8, staffId: 1
+	});
+	const empaque = await recordEmpaque({
+		lotId: C.id, grams: 1000, quantity: 8, grind: 'GRANO', inspection: 'Aceptado', staffId: 1
+	});
+
+	await refuses('combinar café empacado', () =>
+		db.transaction((tx) =>
+			recordMovimiento(tx, {
+				orderId: order.id, action: 'COMBINAR LOTE', staffId: 1,
+				legs: [
+					{ lotId: C.id, kilos: 1, state: 'EMPACADO', selected: false },
+					{ lotId: B.id, kilos: 0.5, state: 'EMPACADO', selected: false }
+				]
+			})
+		)
+	);
+	await refuses('separar café empacado', () =>
+		db.transaction((tx) =>
+			recordMovimiento(tx, {
+				orderId: order.id, action: 'SEPARAR LOTE', staffId: 1,
+				legs: [{ lotId: C.id, kilos: 2, state: 'EMPACADO', selected: false }]
+			})
+		)
+	);
+	/*
+	 * El destino también tiene que estar empacado, si no lo rechaza antes la
+	 * regla de "no mezclar clases" y la prueba no probaría nada.
+	 */
+	const tostionB = await recordTostion({
+		lotId: B.id, roastType: 'Media/Media - City', batchKilos: 1, roastedKilos: 0.8, staffId: 1
+	});
+	const empaqueB = await recordEmpaque({
+		lotId: B.id, grams: 500, quantity: 1, grind: 'GRANO', inspection: 'Aceptado', staffId: 1
+	});
+
+	await refuses('transferir café empacado', () =>
+		db.transaction((tx) =>
+			recordMovimiento(tx, {
+				orderId: order.id, action: 'TRANSFERIR PESO', staffId: 1, destinationLotId: B.id,
+				legs: [{ lotId: C.id, kilos: 2, state: 'EMPACADO', selected: false }]
+			})
+		)
+	);
+
+	// Y lo que sí se puede mover del mismo lote sigue moviéndose.
+	const movimiento = await db.transaction((tx) =>
+		recordMovimiento(tx, {
+			orderId: order.id, action: 'SEPARAR LOTE', staffId: 1,
+			legs: [{ lotId: C.id, kilos: 1, state: 'VERDE', selected: false }]
+		})
+	);
+	check('lo no empacado sí se mueve', typeof movimiento, 'number');
+
+	await undoMovimiento(movimiento);
+	await undoEmpaque(empaqueB);
+	await undoTostion(tostionB);
+	await undoEmpaque(empaque);
+	await undoTostion(tostion);
+}
+
 await refuses('mover cero kilos', () =>
 	db.transaction((tx) =>
 		recordMovimiento(tx, {

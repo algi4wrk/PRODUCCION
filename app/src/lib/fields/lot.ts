@@ -16,7 +16,11 @@ import {
 	ROAST_TYPES,
 	SELECTION_STAGES,
 	SELECTION_STAGE_LABELS,
-	SCREENS
+	SELECTION_METHODS,
+	SELECTION_METHOD_LABELS,
+	SCREENS,
+	type SelectionMethod,
+	type SelectionMethods
 } from '$lib/domain/vocabulary';
 import {
 	validateScreens,
@@ -51,6 +55,11 @@ function isPergamino(row: FormRow): boolean {
 /** Quakers are only visible once roasted, so the question only applies then. */
 function sortsAfterRoasting(row: FormRow): boolean {
 	return requiresQuakerDecision((row.selectionStages as never) ?? []);
+}
+
+/** Whether the client asked for sorting before the roast. */
+function sortsGreen(row: FormRow): boolean {
+	return (((row.selectionStages as string[]) ?? []) as string[]).includes('VERDE');
 }
 
 export function lotFields(
@@ -167,7 +176,52 @@ export function lotFields(
 			})),
 			exclusive: ['NINGUNO'],
 			validate: (value) => validateSelectionStages(value as never),
-			hint: 'En qué etapas se debe seleccionar el café.'
+			hint: 'En qué etapas se debe seleccionar el café.',
+			// The methods hang under it, so the pair reads as one question about
+			// selección rather than three fields sharing a row.
+			wide: true
+		},
+		/*
+		 * One method per requested stage — the client can ask for the machine on
+		 * the green side and hand-picking after the roast, and the two are priced
+		 * differently.
+		 *
+		 * Two flat fields rather than one map field: the form machinery works in
+		 * scalars, and a stage that was never asked for has no method to give. They
+		 * are folded into METODO SELECCION at the boundary — see
+		 * `selectionMethodsOf`.
+		 *
+		 * `attach` puts them under the stages they qualify instead of beside them:
+		 * each only exists because that stage was chosen, and each is named after
+		 * it, so a row of three questions would be one question read three times.
+		 */
+		{
+			group: 'Procesos',
+			name: 'methodVerde',
+			column: 'METODO SELECCION',
+			label: 'Método — Verde',
+			type: 'enum',
+			options: SELECTION_METHODS.map((method) => ({
+				value: method,
+				label: SELECTION_METHOD_LABELS[method]
+			})),
+			required: sortsGreen,
+			visible: sortsGreen,
+			attach: true
+		},
+		{
+			group: 'Procesos',
+			name: 'methodTostado',
+			column: 'METODO SELECCION',
+			label: 'Método — Tostado',
+			type: 'enum',
+			options: SELECTION_METHODS.map((method) => ({
+				value: method,
+				label: SELECTION_METHOD_LABELS[method]
+			})),
+			required: sortsAfterRoasting,
+			visible: sortsAfterRoasting,
+			attach: true
 		},
 		{
 			group: 'Procesos',
@@ -203,11 +257,21 @@ export function lotFields(
 			hint: 'Sí: se separan en su propio lote para reutilizarlos. No: son merma.'
 		},
 		{
+			/*
+			 * Hidden for now, everywhere, at the client's request.
+			 *
+			 * Not deleted: the column exists, the rules that read it are live — a lot
+			 * bound for bodega is offered to no process step — and lots already
+			 * carrying it keep what they carry. Hidden fields are never validated
+			 * either, so nothing it would have asked for can block a save. Delete
+			 * this `visible` line to bring it back.
+			 */
 			group: 'Procesos',
 			name: 'storeInWarehouse',
 			column: 'GUARDAR EN BODEGA',
 			label: 'Guardar en bodega',
-			type: 'yesno'
+			type: 'yesno',
+			visible: () => false
 		}
 	];
 }
@@ -225,10 +289,39 @@ export function blankLot(): FormRow {
 		process: 'Lavado',
 		humidity: null,
 		selectionStages: [],
+		methodVerde: '',
+		methodTostado: '',
 		roastType: 'Ninguno',
 		screens: [],
 		addQuaker: false,
 		storeInWarehouse: false
+	};
+}
+
+/**
+ * Folds the two method fields into the map the column stores.
+ *
+ * Only stages the client actually asked for contribute: a method for a stage
+ * that is not being sorted describes work nobody ordered. Returns null when
+ * neither stage has one, so the column stays empty rather than holding `{}`.
+ */
+export function selectionMethodsOf(row: FormRow): SelectionMethods | null {
+	const stages = ((row.selectionStages as string[]) ?? []) as string[];
+	const methods: SelectionMethods = {};
+	if (stages.includes('VERDE') && row.methodVerde) {
+		methods.VERDE = row.methodVerde as SelectionMethod;
+	}
+	if (stages.includes('TOSTADO') && row.methodTostado) {
+		methods.TOSTADO = row.methodTostado as SelectionMethod;
+	}
+	return Object.keys(methods).length > 0 ? methods : null;
+}
+
+/** The inverse: the stored map, as the two fields the form edits. */
+export function selectionMethodFields(methods: SelectionMethods | null | undefined): FormRow {
+	return {
+		methodVerde: methods?.VERDE ?? '',
+		methodTostado: methods?.TOSTADO ?? ''
 	};
 }
 

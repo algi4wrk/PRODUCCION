@@ -20,6 +20,7 @@
 		onRowClick,
 		badge,
 		rowAction,
+		rowActionLabel,
 		rowMark
 	}: {
 		columns: readonly { key: string; label: string; unit?: string; numeric?: boolean }[];
@@ -34,10 +35,13 @@
 		 */
 		badge?: (key: string, value: string) => BadgeTone | undefined;
 		/**
-		 * A control at the end of every row — HISTORIAL puts Reanudar there. Gets
-		 * its own narrow column with no heading, since the button says what it does.
+		 * A control at the end of every row — a lot's next step, HISTORIAL's
+		 * Reanudar. `rowActionLabel` heads the column when the control is a value
+		 * in its own right; without one the column stays unheaded, which suits a
+		 * button that only says what it does.
 		 */
 		rowAction?: Snippet<[number]>;
+		rowActionLabel?: string;
 		/**
 		 * A mark drawn before the first cell — the lot-state icons. Given the row,
 		 * so the table itself stays ignorant of what it is listing.
@@ -57,7 +61,13 @@
 						<th class="px-4 py-2 font-medium whitespace-nowrap">{column.label}</th>
 					{/each}
 					{#if rowAction}
-						<th class="w-24 px-2 py-2"><span class="sr-only">Acciones</span></th>
+						<th class="px-2 py-2 font-medium whitespace-nowrap">
+							{#if rowActionLabel}
+								{rowActionLabel}
+							{:else}
+								<span class="sr-only">Acciones</span>
+							{/if}
+						</th>
 					{/if}
 				</tr>
 			</thead>
@@ -96,7 +106,9 @@
 						{/each}
 						{#if rowAction}
 							<!-- z-10 so it stays clickable above a row that is itself a link. -->
-							<td class="relative z-10 px-2 py-2 text-right">
+							<!-- Left, like every other column: these read as a cell's value
+							     (a lot's next step), not as a control parked at the edge. -->
+							<td class="relative z-10 px-2 py-2 text-left">
 								{@render rowAction(index)}
 							</td>
 						{/if}

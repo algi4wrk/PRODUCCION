@@ -19,7 +19,8 @@
 		staff,
 		references = [],
 		showOrder = false,
-		readonly = false
+		readonly = false,
+		lotId
 	}: {
 		events: EmpaqueRow[];
 		/** Omitted on a lot's own page, where there is nothing to pick between. */
@@ -29,6 +30,8 @@
 		references?: readonly ReferenceProgress[];
 		/** Adds the Orden column, for a list that spans several. */
 		showOrder?: boolean;
+		/** On a lot's page: the lot a new record opens on. */
+		lotId?: number;
 		/**
 		 * Hides Deshacer. A person's page is a record of what they did, not a
 		 * place to unwind production — and it has no action to post to.
@@ -110,7 +113,7 @@
 <Section title="Empaque" count={events.length}>
 	{#snippet action()}
 		{#if lots && bags && staff}
-			<EmpaqueForm {lots} {bags} {staff} {references} />
+			<EmpaqueForm {lots} {bags} {staff} {references} {lotId} />
 		{/if}
 	{/snippet}
 

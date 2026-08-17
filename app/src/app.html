@@ -1,9 +1,35 @@
 <!doctype html>
-<html lang="en">
+<html lang="es-CO">
 	<head>
 		<meta charset="utf-8" />
-		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<!--
+			viewport-fit=cover so the bottom tab bar can sit under the home
+			indicator; the bar pads itself back with env(safe-area-inset-bottom).
+		-->
+		<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 		<meta name="text-scale" content="scale" />
+
+		<!--
+			Added to the home screen, PRODUCCIÓN opens without browser chrome and
+			under its own icon. No service worker: the data lives in SQLite on the
+			mill's own computer, so a phone that cannot reach it has nothing useful
+			to show — and a cached page of stale weights on a production floor is
+			worse than one that plainly fails to load.
+		-->
+		<link rel="manifest" href="/manifest.webmanifest" />
+		<link rel="icon" href="/icon-192.png" />
+		<link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+
+		<!-- iOS reads these rather than the manifest for the same two facts. -->
+		<meta name="apple-mobile-web-app-capable" content="yes" />
+		<meta name="apple-mobile-web-app-title" content="PRODUCCIÓN" />
+		<meta name="apple-mobile-web-app-status-bar-style" content="default" />
+
+		<!-- The address bar and the status bar take the palette's own colours,
+		     light or dark, so the chrome matches the page it frames. -->
+		<meta name="theme-color" media="(prefers-color-scheme: light)" content="#f6f6f4" />
+		<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#171614" />
+
 		%sveltekit.head%
 	</head>
 	<body data-sveltekit-preload-data="hover">

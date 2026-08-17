@@ -89,6 +89,80 @@
 		highlighted = -1;
 	}
 
+	/**
+	 * Selecting must not depend on which event a touch screen delivers.
+	 *
+	 * A tap on iOS can end without a `click` reaching the option at all — the
+	 * press blurs the input, and anything that unmounts the list in between eats
+	 * the click. So the option answers to `pointerup` as well, and whichever
+	 * arrives first wins; the other is ignored for half a second so one tap is
+	 * never two selections.
+	 *
+	 * `click` is kept rather than replaced: it is what a keyboard and a screen
+	 * reader send, and neither sends `pointerup`.
+	 */
+	let lastPointerPick = 0;
+
+	/**
+	 * Eats the click that follows a tap we already acted on.
+	 *
+	 * Choosing on `pointerup` closes the list, so by the time the browser sends
+	 * the click the option is gone and whatever was underneath — the next field —
+	 * receives it instead, taking focus and opening the keyboard on it. Catching
+	 * that one click in the capture phase stops it before it lands anywhere.
+	 *
+	 * Brief on purpose: the ghost follows the same gesture, so 300 ms is long
+	 * enough to catch it and short enough that a deliberate second tap gets
+	 * through.
+	 */
+	function swallowNextClick() {
+		if (typeof document === 'undefined') return;
+
+		// mousedown as well as click: it is mousedown that moves focus, so eating
+		// the click alone still left the field underneath focused with the
+		// keyboard open on it.
+		const kinds = ['mousedown', 'mouseup', 'click'] as const;
+
+		const eat = (event: Event) => {
+			event.preventDefault();
+			event.stopPropagation();
+		};
+
+		for (const kind of kinds) document.addEventListener(kind, eat, true);
+		setTimeout(() => {
+			for (const kind of kinds) document.removeEventListener(kind, eat, true);
+		}, 300);
+	}
+
+	/**
+	 * A mouse is left alone entirely: its click always arrives, so it takes the
+	 * ordinary path and desktop behaves exactly as it did before any of this. All
+	 * of the machinery above is for touch, where the click may not come.
+	 */
+	function fromTouch(event: PointerEvent): boolean {
+		return event.pointerType !== 'mouse';
+	}
+
+	function pick(option: FieldOption, event: PointerEvent | null) {
+		if (event) {
+			if (!fromTouch(event)) return;
+			lastPointerPick = Date.now();
+			swallowNextClick();
+		} else if (Date.now() - lastPointerPick < 500) return;
+		choose(option);
+	}
+
+	/** The same, for the "+ Nuevo" entry — one tap must not open two sheets. */
+	function pickCreate(event: PointerEvent | null) {
+		if (event) {
+			if (!fromTouch(event)) return;
+			lastPointerPick = Date.now();
+			swallowNextClick();
+		} else if (Date.now() - lastPointerPick < 500) return;
+		close();
+		onCreate?.();
+	}
+
 	function onInput(event: Event) {
 		const text = (event.currentTarget as HTMLInputElement).value;
 		query = text;
@@ -127,15 +201,52 @@
 		highlighted = -1;
 	}
 
-	/** Closes when focus leaves the control entirely. */
+	/**
+	 * Closes when focus leaves the control entirely.
+	 *
+	 * `relatedTarget` is null on a touch screen — tapping a button there does not
+	 * move focus to it — so this alone would close the list on the way down and
+	 * the option would unmount before the tap became a click. `pressing` says a
+	 * pointer is currently down inside the control, and that is not focus leaving.
+	 */
 	function onFocusOut(event: FocusEvent) {
+		if (pressing) return;
 		const next = event.relatedTarget as Node | null;
 		if (next && wrapper?.contains(next)) return;
 		close();
 	}
+
+	/**
+	 * True between pointerdown and pointerup inside the control.
+	 *
+	 * Set on the wrapper in the capture phase so it is already true by the time
+	 * the input's focusout fires. Released on the window, since a press that
+	 * started here can end anywhere.
+	 */
+	let pressing = $state(false);
+
+	function onPointerDown() {
+		pressing = true;
+		if (typeof window === 'undefined') return;
+		window.addEventListener(
+			'pointerup',
+			() => {
+				pressing = false;
+				// Focus may have gone elsewhere while the pointer was down — a tap
+				// outside the list, say — and that close never ran.
+				if (wrapper && !wrapper.contains(document.activeElement)) close();
+			},
+			{ once: true }
+		);
+	}
 </script>
 
-<div class="relative" bind:this={wrapper} onfocusout={onFocusOut}>
+<div
+	class="relative"
+	bind:this={wrapper}
+	onfocusout={onFocusOut}
+	onpointerdowncapture={onPointerDown}
+>
 	<input
 		{id}
 		type="text"
@@ -194,10 +305,8 @@
 				<li>
 					<button
 						type="button"
-						onclick={() => {
-							close();
-							onCreate();
-						}}
+						onpointerup={(event) => pickCreate(event)}
+						onclick={() => pickCreate(null)}
 						class="block w-full px-3 py-1.5 text-left text-sm font-medium text-accent
 							transition hover:bg-accent-soft"
 					>
@@ -213,7 +322,8 @@
 						type="button"
 						role="option"
 						aria-selected={value === option.value}
-						onclick={() => choose(option)}
+						onpointerup={(event) => pick(option, event)}
+						onclick={() => pick(option, null)}
 						onmouseenter={() => (highlighted = index)}
 						class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm transition
 							{index === highlighted ? 'bg-accent-soft text-accent' : 'text-text'}"

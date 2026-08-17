@@ -35,7 +35,8 @@ export type IconName =
 	| 'grind'
 	| 'boxOpen'
 	| 'merge'
-	| 'download';
+	| 'download'
+	| 'plus';
 
 /** Path data per icon. Multiple subpaths are separate entries. */
 export const ICON_PATHS: Record<IconName, string[]> = {
@@ -87,8 +88,17 @@ export const ICON_PATHS: Record<IconName, string[]> = {
 	download: ['M12 3v12', 'M7 11l5 5 5-5', 'M4 20h16'],
 	// A cross — undo, dismiss, remove.
 	close: ['M6 6l12 12', 'M18 6L6 18'],
+	// The same cross upright — add one more.
+	plus: ['M12 5v14', 'M5 12h14'],
 	// A path that forks in two — coffee leaving one lot for another.
-	split: ['M4 6h4l5 6 5-6h2', 'M4 18h4l4-4.8', 'M17 3l3 3-3 3', 'M17 15l3 3-3 3'],
+	/*
+	 * One path forking into two, with an arrowhead on each branch.
+	 *
+	 * Redrawn: the branches used to stop short of their own arrowheads and the
+	 * lower one ended in mid-air, which reads as missing pixels once the icon is
+	 * drawn larger than the 14 px it was checked at.
+	 */
+	split: ['M4 12h5l5-6h5', 'M4 12h5l5 6h5', 'm16 3 3 3-3 3', 'm16 15 3 3-3 3'],
 	// Three lines — the universal sign for a menu.
 	menu: ['M4 7h16', 'M4 12h16', 'M4 17h16'],
 	// Disclosure: down when the contents are showing, right when they are not.

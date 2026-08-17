@@ -8,7 +8,7 @@ import { listMovimientos } from '$lib/server/movimientos';
 import { orderLedgers, orderSourceMerma } from '$lib/server/ledger';
 import { formatDate, formatKilos, formatPercent, referenceKilos } from '$lib/domain/derived';
 import { estimatedOrderKilos } from '$lib/domain/estimates';
-import { formatSelectionStages } from '$lib/domain/vocabulary';
+import { formatSelection, formatSelectionMethod } from '$lib/domain/vocabulary';
 import { lotStatus } from '$lib/domain/lotState';
 import { totalOf } from '$lib/domain/ledger';
 
@@ -82,7 +82,9 @@ export async function load({ params, url }) {
 				current: formatKilos(ledger ? totalOf(ledger.balances) : 0),
 				status: lotStatus(lot, ledger),
 				asked: [
-					formatSelectionStages(lot.selectionStages),
+					// The method rides on the stage it belongs to: it is part of what
+					// the client ordered, and part of what they are billed for.
+					formatSelection(lot.selectionStages, lot.selectionMethods),
 					lot.roastType !== 'Ninguno' ? lot.roastType : null
 				]
 					.filter(Boolean)
@@ -132,6 +134,7 @@ export async function load({ params, url }) {
 					date: formatDate(event.date),
 					lot: event.lot,
 					stage: event.stage,
+					method: formatSelectionMethod(event.method),
 					total: formatKilos(event.totalKilos),
 					net: formatKilos(event.netKilos),
 					removed: formatKilos(event.totalKilos - event.netKilos),

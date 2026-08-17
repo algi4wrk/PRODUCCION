@@ -54,6 +54,7 @@ import { db } from '$lib/server/db';
 import { orderLedgers, orderSourceMerma } from '$lib/server/ledger';
 import { sourceMermaFraction } from '$lib/domain/sourceMerma';
 import { lotRow } from '$lib/domain/lotRow';
+import { selectionMethodsOf } from '$lib/fields/lot';
 import { visibleSections } from '$lib/domain/derived';
 import type { Actions } from './$types';
 
@@ -373,6 +374,7 @@ export const actions: Actions = {
 						? undefined
 						: Number(row.removedKilos),
 				keepQuaker: row.keepQuaker === true,
+				method: String(row.method ?? '') || null,
 				staffId: Number(row.staffId),
 				notes: String(row.notes ?? '') || null
 			});
@@ -437,6 +439,7 @@ export const actions: Actions = {
 						? undefined
 						: Number(row.removedKilos),
 				keepQuaker: row.keepQuaker === true,
+				method: String(row.method ?? '') || null,
 				staffId: Number(row.staffId),
 				notes: String(row.notes ?? '') || null
 			});
@@ -544,10 +547,17 @@ export const actions: Actions = {
 	 */
 	addLot: async ({ request, params }) => {
 		const form = await request.formData();
-		const lot = JSON.parse(String(form.get('lot') ?? '{}')) as NewLotInput;
+		const row = JSON.parse(String(form.get('lot') ?? '{}'));
+		// The form edits a method per stage as two flat fields; the column stores
+		// them as one map.
+		const { methodVerde, methodTostado, ...lot } = row;
+		const input = {
+			...lot,
+			selectionMethods: selectionMethodsOf(row)
+		} as NewLotInput;
 
 		try {
-			await addLot(await orderId(params.code), lot);
+			await addLot(await orderId(params.code), input);
 		} catch (error) {
 			return fail(400, { error: (error as Error).message });
 		}

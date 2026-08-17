@@ -48,3 +48,28 @@ export function onChange(handler: () => void): () => void {
 	channel.onmessage = () => handler();
 	return () => channel.close();
 }
+
+/**
+ * A page that keeps itself current: the broadcast for other windows of this
+ * browser, a timer for everything else.
+ *
+ * The timer is what covers a second *device* — a phone, the other computer at
+ * the mill — since a broadcast never leaves the browser that sent it. It is
+ * also the fallback for a message that was not delivered.
+ *
+ * TEMPORARY, both halves. When a write can be announced from the server —
+ * Server-Sent Events now, Supabase Realtime later — this becomes a
+ * subscription and the polling goes away. Keeping the two callers in one
+ * function is what makes that a single edit.
+ *
+ * Returns the cleanup, so an `$effect` can hand it straight back.
+ */
+export function liveRefresh(refetch: () => void, intervalMs: number): () => void {
+	const timer = setInterval(refetch, intervalMs);
+	const stop = onChange(refetch);
+
+	return () => {
+		clearInterval(timer);
+		stop();
+	};
+}

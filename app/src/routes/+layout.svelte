@@ -67,8 +67,17 @@
 	`group`, so moving from the strip onto the rail keeps it out.
 -->
 <div class="min-h-screen bg-bg">
-	<!-- print:hidden — the rail is a way of getting around, and paper has none. -->
-	<div data-app-nav class="group pointer-events-none fixed inset-y-0 left-0 z-30 flex print:hidden">
+	<!--
+		print:hidden — the rail is a way of getting around, and paper has none.
+
+		Hidden on a phone too: it opens on hover, and a touch screen has no hover.
+		Nothing replaces it there — on a phone the app is the order queue and what
+		opens from it, so the only control it needs is the one on the queue itself.
+	-->
+	<div
+		data-app-nav
+		class="group pointer-events-none fixed inset-y-0 left-0 z-30 hidden sm:flex print:hidden"
+	>
 		<!-- The rail, parked off-screen. No `overflow-hidden`: the hover labels
 		     have to escape its 56 px. -->
 		<nav

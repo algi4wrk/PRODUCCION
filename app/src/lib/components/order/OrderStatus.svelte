@@ -41,8 +41,15 @@
 	const finished = $derived(status === 'TERMINADA');
 
 	/** Shared shape. Only the hover colour differs between the actions. */
-	const BARE =
-		'flex items-center gap-1.5 rounded-md px-2 py-1 text-sm transition disabled:cursor-default';
+	/**
+	 * Icons alone, with the name on hover.
+	 *
+	 * The heading carries a brand and a client now, which is as much as the row
+	 * can hold — and these seven are the same seven on every order, so they are
+	 * learnt once. The hover colours stay: they are what says which of them is
+	 * destructive before it is pressed.
+	 */
+	const BARE = 'hint rounded-md p-1.5 transition disabled:cursor-default';
 
 	/** Guards the delete: nothing is posted until the dialog is confirmed. */
 	let confirmingDelete = $state(false);
@@ -54,9 +61,13 @@
 	{#if !finished}
 		<form method="POST" action="?/setStatus" use:enhance={announceOnSuccess}>
 			<input type="hidden" name="status" value={pause.status} />
-			<button type="submit" class="{BARE} text-muted hover:bg-accent-soft hover:text-accent">
-				<Icon name={pause.icon} />
-				{pause.label}
+			<button
+				type="submit"
+				title={pause.label}
+				class="{BARE} text-muted hover:bg-sky-50 hover:text-sky-600 dark:hover:bg-sky-950/50"
+			>
+				<Icon name={pause.icon} size={18} />
+				<span class="sr-only">{pause.label}</span>
 			</button>
 		</form>
 	{/if}
@@ -68,13 +79,13 @@
 		<button
 			type="submit"
 			aria-pressed={finished}
-			title={finish.hint}
+			title={finished ? finish.hint : finish.label}
 			class="{BARE} {finished
-				? 'bg-accent-soft font-medium text-accent'
-				: 'text-muted hover:bg-accent-soft hover:text-accent'}"
+				? 'bg-emerald-100 font-medium text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300'
+				: 'text-muted hover:bg-emerald-50 hover:text-emerald-600 dark:hover:bg-emerald-950/50'}"
 		>
-			<Icon name={finish.icon} />
-			{finish.label}
+			<Icon name={finish.icon} size={18} />
+			<span class="sr-only">{finish.label}</span>
 		</button>
 	</form>
 
@@ -84,13 +95,14 @@
 		<input type="hidden" name="priority" value={String(!priority)} />
 		<button
 			type="submit"
+			title={priority ? 'Quitar prioridad' : 'Priorizar'}
 			class="{BARE} {priority
 				? 'bg-priority-soft font-medium text-priority'
 				: 'text-muted hover:bg-priority-soft hover:text-priority'}"
 		>
 			<!-- The struck-through flag reads as "take it down", matching the label. -->
-			<Icon name={priority ? 'flagOff' : 'flag'} />
-			{priority ? 'Quitar prioridad' : 'Priorizar'}
+			<Icon name={priority ? 'flagOff' : 'flag'} size={18} />
+			<span class="sr-only">{priority ? 'Quitar prioridad' : 'Priorizar'}</span>
 		</button>
 	</form>
 
@@ -105,10 +117,11 @@
 		<button
 			type="button"
 			onclick={() => (confirmingDelete = true)}
+			title="Eliminar"
 			class="{BARE} text-muted hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/50"
 		>
-			<Icon name="trash" />
-			Eliminar
+			<Icon name="trash" size={18} />
+			<span class="sr-only">Eliminar</span>
 		</button>
 
 		<ConfirmDialog

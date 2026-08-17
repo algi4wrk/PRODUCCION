@@ -19,6 +19,7 @@
 
 import { formatKilos } from '$lib/domain/derived';
 import { validateSeleccionYield } from '$lib/domain/validation';
+import { SELECTION_METHODS, SELECTION_METHOD_LABELS } from '$lib/domain/vocabulary';
 import type { FieldDef, FieldOption, FormRow } from './types';
 
 /** A lot that can be sorted at this stage. */
@@ -27,6 +28,8 @@ export type SeleccionLotOption = FieldOption & {
 	availableKilos: number;
 	/** Whether the client wants this lot's quakers kept rather than discarded. */
 	keepsQuakers: boolean;
+	/** The method the client asked for at this stage, if they asked for one. */
+	method?: string;
 };
 
 export type SeleccionContext = {
@@ -142,6 +145,27 @@ export function seleccionFields({ lots, staff, stage }: SeleccionContext): Field
 			hint: 'Sí: salen a su propio lote. No: son merma.'
 		},
 		{
+			/**
+			 * How this pass was sorted.
+			 *
+			 * Opens on what the client asked for — METODO SELECCION on the lot, for
+			 * this stage — and stays changeable, because the machine can break down
+			 * and the work still has to be recorded as it was actually done.
+			 *
+			 * Nothing downstream calculates from it: sorted coffee is sorted coffee
+			 * either way. It is here because the two are priced differently.
+			 */
+			name: 'method',
+			column: 'METODO',
+			label: 'Método',
+			type: 'enum',
+			required: true,
+			options: SELECTION_METHODS.map((method) => ({
+				value: method,
+				label: SELECTION_METHOD_LABELS[method]
+			}))
+		},
+		{
 			name: 'staffId',
 			column: 'RESPONSABLE',
 			label: 'Responsable',
@@ -164,6 +188,7 @@ export function seleccionFields({ lots, staff, stage }: SeleccionContext): Field
 export function blankSeleccion(): FormRow {
 	return {
 		lotId: '',
+		method: '',
 		totalKilos: null,
 		netKilos: null,
 		removedKilos: null,

@@ -27,6 +27,7 @@ import { listTostiones } from './tostion.ts';
 import { listEmpaques } from './empaque.ts';
 import { listMovimientos } from './movimientos.ts';
 import { formatDate, formatKilos, orderLabel } from '../domain/derived.ts';
+import { formatSelectionMethod } from '../domain/vocabulary.ts';
 import type { EventFilter } from '../domain/eventFilter.ts';
 import { HISTORY_VIEWS, type HistoryView } from '../domain/historial.ts';
 import type { OrderStatus } from '../domain/vocabulary.ts';
@@ -218,6 +219,9 @@ export async function runQuery(query: HistoryQuery): Promise<HistoryResult> {
 		return {
 			columns: [
 				...EVENT_HEAD,
+				// Manual or electrónica: what the two are priced apart by, and what
+				// makes merma per method answerable once this is exported.
+				{ key: 'method', label: 'Método' },
 				{ key: 'total', label: 'Entra', unit: 'kg', numeric: true },
 				{ key: 'net', label: 'Seleccionado', unit: 'kg', numeric: true },
 				{ key: 'removed', label: stage === 'TOSTADO' ? 'Quakers' : 'Defectos', unit: 'kg', numeric: true },
@@ -228,6 +232,7 @@ export async function runQuery(query: HistoryQuery): Promise<HistoryResult> {
 				order: event.orderCode,
 				client: clientNameOf(event.orderId),
 				lot: event.lot,
+				method: formatSelectionMethod(event.method),
 				total: formatKilos(event.totalKilos),
 				net: formatKilos(event.netKilos),
 				removed: formatKilos(event.totalKilos - event.netKilos),

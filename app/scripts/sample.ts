@@ -73,6 +73,8 @@ const orderId = await createOrder({
 			humidity: 0.11,
 			farmId: null,
 			selectionStages: ['VERDE', 'TOSTADO'],
+			// Un método por etapa, distintos, que es el caso que hay que poder ver.
+			selectionMethods: { VERDE: 'Electronica', TOSTADO: 'Manual' },
 			roastType: 'Media/Media - City',
 			screens: ['14'],
 			addQuaker: true,
@@ -88,6 +90,7 @@ const orderId = await createOrder({
 			humidity: 0.105,
 			farmId: null,
 			selectionStages: ['TOSTADO'],
+			selectionMethods: { TOSTADO: 'Electronica' },
 			roastType: 'Media Alta - Full City',
 			screens: null,
 			addQuaker: false,

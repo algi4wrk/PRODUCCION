@@ -50,6 +50,24 @@
 		}
 		return result;
 	});
+
+	/**
+	 * Groups each run of `attach` fields onto the field they follow, so the whole
+	 * lot occupies one cell of the grid.
+	 *
+	 * An attached field with nothing before it (its leader hidden, say) becomes a
+	 * cell of its own rather than disappearing — a question that has to be
+	 * answered is never dropped for want of somewhere to put it.
+	 */
+	function cells(fields: FieldDef[]) {
+		const result: { lead: FieldDef; attached: FieldDef[] }[] = [];
+		for (const field of fields) {
+			const last = result.at(-1);
+			if (field.attach && last) last.attached.push(field);
+			else result.push({ lead: field, attached: [] });
+		}
+		return result;
+	}
 </script>
 
 <div class="flex flex-col gap-9">
@@ -64,12 +82,28 @@
 				</h4>
 			{/if}
 
-			<div class="grid grid-cols-1 gap-x-6 gap-y-5 sm:grid-cols-2">
-				{#each section.fields as field (field.name)}
+		<div class="grid grid-cols-1 gap-x-6 gap-y-5 sm:grid-cols-2">
+				{#each cells(section.fields) as cell (cell.lead.name)}
 					<!-- `wide` spans both columns: option rows and long text need the
 					     room, and wrap awkwardly inside half a form. -->
-					<div class={field.wide ? 'sm:col-span-2' : ''}>
-						<Field {field} bind:row error={errors[field.name]} {idPrefix} {onCreateRef} />
+					<div class={cell.lead.wide ? 'sm:col-span-2' : ''}>
+						<Field
+							field={cell.lead}
+							bind:row
+							error={errors[cell.lead.name]}
+							{idPrefix}
+							{onCreateRef}
+						/>
+
+						{#if cell.attached.length > 0}
+							<!-- Indented under their leader, against a rule that says which
+							     answer they qualify. -->
+							<div class="mt-3 flex flex-col gap-3 border-l-2 border-border pl-4">
+								{#each cell.attached as field (field.name)}
+									<Field {field} bind:row error={errors[field.name]} {idPrefix} {onCreateRef} />
+								{/each}
+							</div>
+						{/if}
 					</div>
 				{/each}
 			</div>

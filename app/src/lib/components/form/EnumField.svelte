@@ -38,7 +38,7 @@
 </script>
 
 {#if asButtons}
-	<div class="flex flex-wrap gap-2" role="radiogroup" aria-labelledby={id}>
+	<div class="flex flex-wrap gap-1.5 sm:gap-2" role="radiogroup" aria-labelledby={id}>
 		{#each options as option (option.value)}
 			<button
 				type="button"

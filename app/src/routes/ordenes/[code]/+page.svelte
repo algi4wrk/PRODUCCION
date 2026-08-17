@@ -30,6 +30,7 @@
 	import EmpaqueSection from '$lib/components/proceso/EmpaqueSection.svelte';
 	import { statusTone } from '$lib/domain/status';
 	import {
+		orderLabel,
 		formatKilos,
 		plannedKilos,
 		receivedKilos,
@@ -37,8 +38,41 @@
 	} from '$lib/domain/derived';
 	import { estimatedOrderKilos, remainingKilos } from '$lib/domain/estimates';
 	import { column } from '$lib/domain/lotRow';
+	import { formForStep, type StepForm } from '$lib/domain/nextStepForm';
+	import { STEP_TONES } from '$lib/stepTones';
+	import TrillaForm from '$lib/components/proceso/TrillaForm.svelte';
+	import SeleccionForm from '$lib/components/proceso/SeleccionForm.svelte';
+	import TostionForm from '$lib/components/proceso/TostionForm.svelte';
+	import EmpaqueForm from '$lib/components/proceso/EmpaqueForm.svelte';
 
 	let { data } = $props();
+
+	/**
+	 * The next step, as a button.
+	 *
+	 * The lot rows already say what each lot needs next; pressing it opens the
+	 * form that does it, with the lot filled in. The colours are the board's, so
+	 * a step is the same colour wherever it is read.
+	 *
+	 * Steps that are not work — TERMINADO, COMBINADO, BODEGA, EN GRANEL — open
+	 * nothing and stay as a plain chip.
+	 */
+	let stepForm = $state<{ kind: StepForm; lotId: number } | null>(null);
+	/** Bound to the open form, so closing it from inside clears the choice. */
+	let stepOpen = $state(false);
+
+	$effect(() => {
+		if (!stepOpen) stepForm = null;
+	});
+
+	const openStep = (index: number) => {
+		const row = data.lotRows[index];
+		const kind = formForStep(row.step);
+		if (kind) {
+			stepForm = { kind, lotId: order.lots[index].id };
+			stepOpen = true;
+		}
+	};
 
 	const order = $derived(data.order);
 	const received = $derived(receivedKilos(order.lots));
@@ -61,7 +95,6 @@
 	 */
 	const LOT_COLUMNS = column([
 		'lote',
-		'rawMaterial',
 		'greenKilos',
 		'roastedKilos',
 		'initialWeight',
@@ -123,19 +156,46 @@
 </script>
 
 <div class="mb-6 flex flex-wrap items-center gap-3">
-	<a href="/ordenes" class="text-sm text-muted transition hover:text-accent">← Órdenes</a>
-	<h1 class="font-mono text-xl font-semibold text-text">{order.code}</h1>
-	<Badge text={order.status} tone={statusTone(order.status)} />
-	{#if order.priority}
-		<Badge text="PRIORIDAD" tone="priority" />
-	{/if}
+	<!--
+		The client leads, because that is what an order is *about*; the code is
+		underneath in mono, where it is still available for the bags and the URL.
+		The type label above is what tells this page apart from a lot's at a glance.
+	-->
+	<!--
+		The path says where this is and what it is; the name says whose. The code
+		lives in the path rather than in the title because it is how the order is
+		filed, not what it is about.
+	-->
+	<div>
+		<p class="text-xs tracking-widest text-muted uppercase">
+			<a href="/ordenes" class="transition hover:text-accent">Órdenes</a>
+			<span class="mx-1">›</span>
+			<span class="font-mono">{order.code}</span>
+		</p>
+		<!-- The same name the queue and HISTORIAL show, so an order reads the same
+		     wherever it is met: brand first, client after. -->
+		<!-- The state sits at the end of the name, the way a lot's does. -->
+		<h1 class="mt-0.5 flex flex-wrap items-center gap-2 text-xl font-semibold text-text">
+			{orderLabel(order, order.clientName)}
+			<Badge text={order.status} tone={statusTone(order.status)} />
+			<!--
+				Beside the status rather than outside the block. As a sibling of the
+				name it was centred against both lines of it — path above, title below —
+				and so sat half a line high beside the badge it belongs next to. The two
+				say the same kind of thing about the order and now read as a pair.
+			-->
+			{#if order.priority}
+				<Badge text="PRIORIDAD" tone="priority" />
+			{/if}
+		</h1>
+	</div>
 
 	<!-- The actions fill the empty right of this row: they act on the order as a
 	     whole, which is exactly what this row identifies. -->
 	<div class="ml-auto">
 		<OrderStatus status={order.status} priority={order.priority} code={order.code}>
 			{#snippet edit()}
-				<MovimientoForm lots={data.lotOptions} staff={data.staffOptions} />
+				<MovimientoForm lots={data.lotOptions} staff={data.staffOptions} iconOnly />
 				<OrderEdit {order} clients={data.clients} brands={data.brands} />
 				<OrderExport code={order.code} />
 			{/snippet}
@@ -159,9 +219,39 @@
 			rows={data.lotRows}
 			empty="Esta orden todavía no tiene lotes registrados."
 			onRowClick={(index) => goto(`/lotes/${order.lots[index].code}`)}
+			rowActionLabel="Paso siguiente"
 		>
 			{#snippet rowMark(row)}
 				<LotMark status={row.status} />
+			{/snippet}
+
+			{#snippet rowAction(index)}
+				{@const row = data.lotRows[index]}
+				{@const kind = formForStep(row.step)}
+				<!--
+					`stopPropagation` so the button wins over the row it sits in: the row
+					opens the lot, which is the right thing to do everywhere else on it.
+				-->
+				{#if kind}
+					<button
+						type="button"
+						onclick={(event) => {
+							event.stopPropagation();
+							openStep(index);
+						}}
+						class="rounded-md px-2 py-1 text-xs font-medium whitespace-nowrap transition
+							hover:opacity-80 {STEP_TONES[row.stepTone] ?? STEP_TONES.neutral}"
+					>
+						{row.step}
+					</button>
+				{:else}
+					<span
+						class="rounded-md px-2 py-1 text-xs whitespace-nowrap
+							{STEP_TONES[row.stepTone] ?? STEP_TONES.neutral}"
+					>
+						{row.step}
+					</span>
+				{/if}
 			{/snippet}
 		</Table>
 	</Section>
@@ -308,4 +398,59 @@
 			}
 		}}
 	/>
+{/if}
+
+<!--
+	The forms the step buttons open, one instance each: they are the same forms
+	the sections below use, opened with the lot already chosen.
+-->
+{#if stepForm}
+	{@const lotId = stepForm.lotId}
+	{#if stepForm.kind === 'trilla'}
+		<TrillaForm
+			lots={data.trillaLots}
+			staff={data.staffOptions}
+			{lotId}
+			trigger={false}
+			bind:open={stepOpen}
+		/>
+	{:else if stepForm.kind === 'seleccionVerde'}
+		<SeleccionForm
+			lots={data.greenSeleccionLots}
+			staff={data.staffOptions}
+			stage="VERDE"
+			title="Selección — Almendra verde"
+			{lotId}
+			trigger={false}
+			bind:open={stepOpen}
+		/>
+	{:else if stepForm.kind === 'seleccionTostado'}
+		<SeleccionForm
+			lots={data.roastedSeleccionLots}
+			staff={data.staffOptions}
+			stage="TOSTADO"
+			title="Selección — Tostado"
+			{lotId}
+			trigger={false}
+			bind:open={stepOpen}
+		/>
+	{:else if stepForm.kind === 'tostion'}
+		<TostionForm
+			lots={data.tostionLots}
+			staff={data.staffOptions}
+			{lotId}
+			trigger={false}
+			bind:open={stepOpen}
+		/>
+	{:else}
+		<EmpaqueForm
+			lots={data.empaqueLots}
+			bags={data.bags}
+			staff={data.staffOptions}
+			references={data.referenceProgress}
+			{lotId}
+			trigger={false}
+			bind:open={stepOpen}
+		/>
+	{/if}
 {/if}

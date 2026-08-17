@@ -36,11 +36,12 @@
 <button
 	type="button"
 	onclick={() => (open = true)}
-	class="flex items-center gap-1.5 rounded-md px-2 py-1 text-sm text-muted transition
-		hover:bg-accent-soft hover:text-accent"
+	title="Exportar"
+		class="hint rounded-md p-1.5 text-muted transition
+		hover:bg-teal-50 hover:text-teal-600 dark:hover:bg-teal-950/50"
 >
-	<Icon name="download" />
-	Exportar
+	<Icon name="download" size={18} />
+	<span class="sr-only">Exportar</span>
 </button>
 
 <Modal title="Exportar orden" bind:open>

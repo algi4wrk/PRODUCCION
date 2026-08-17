@@ -12,7 +12,7 @@ import { clients, farms, ledger, lots, movements, orders, references } from './d
 import { logChange } from './audit.ts';
 import { orderLabel } from '../domain/derived.ts';
 import { nextLetter } from '../domain/codes.ts';
-import { ACTIONS_CREATING_LOT } from '../domain/vocabulary.ts';
+import { ACTIONS_CREATING_LOT, type SelectionMethods } from '../domain/vocabulary.ts';
 import { lotLedger } from './ledger.ts';
 
 type Db = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -133,6 +133,8 @@ export type LotEdit = {
 	process: string;
 	humidity: number;
 	selectionStages: string[];
+	/** The method per stage, as METODO SELECCION stores it. */
+	selectionMethods: SelectionMethods | null;
 	roastType: string;
 	screens: string[] | null;
 	addQuaker: boolean | null;
@@ -152,6 +154,7 @@ export async function updateLot(id: number, input: LotEdit): Promise<void> {
 			process: input.process as never,
 			humidity: input.humidity,
 			selectionStages: input.selectionStages as never,
+			selectionMethods: input.selectionMethods,
 			roastType: input.roastType as never,
 			screens: input.screens as never,
 			addQuaker: input.addQuaker,

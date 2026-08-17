@@ -98,6 +98,15 @@ export type FieldDef = {
 	readonly?: boolean;
 	/** Lets a field span the full width of a two-column form grid. */
 	wide?: boolean;
+	/**
+	 * Renders this field tucked under the one before it, in the same cell,
+	 * instead of taking a cell of its own.
+	 *
+	 * For a field that qualifies the previous answer rather than asking something
+	 * new — the sorting method under the stages it applies to. Side by side they
+	 * read as three separate questions; underneath, as one with its details.
+	 */
+	attach?: boolean;
 };
 
 /** Builds `FieldOption[]` from a plain list of strings. */

@@ -42,8 +42,19 @@
 		bags,
 		staff,
 		references,
+		/**
+		 * Opened from a lot's own page: that lot is the subject, so the form opens
+		 * on it instead of asking which.
+		 */
+		lotId,
 		/** The record being rewritten. Absent when recording a new one. */
 		edit,
+		/**
+		 * Whether to render the "+ Nuevo" that opens this form. False where the
+		 * caller has its own control — the next-step badge on a lot's page — so
+		 * the page does not grow a second way to do the same thing.
+		 */
+		trigger = true,
 		open = $bindable(false)
 	}: {
 		lots: readonly EmpaqueLotOption[];
@@ -51,7 +62,9 @@
 		staff: readonly FieldOption[];
 		/** The packaging plan, with each line's progress. */
 		references: readonly ReferenceProgress[];
+		lotId?: number;
 		edit?: { id: number; row: FormRow };
+		trigger?: boolean;
 		open?: boolean;
 	} = $props();
 
@@ -61,10 +74,27 @@
 	/** The stacked "+ Nuevo responsable" sheet. */
 	let staffOpen = $state(false);
 
-	const fields = $derived(empaqueFields({ lots, bags, staff }));
+	/**
+	 * The variety the chosen line asks for, which narrows the lot picker the same
+	 * way the lot dims the lines. It goes both ways because either can be decided
+	 * first: sometimes the lot is on the table, sometimes the order is what the
+	 * client is waiting on. OTRO asks for nothing in particular.
+	 */
+	const askedVariety = $derived(
+		references.find((line) => String(line.id) === String(draft.referenceId))?.variety
+	);
+
+	const lotsForLine = $derived(
+		!askedVariety || askedVariety === 'OTRO'
+			? lots
+			: lots.filter((lot) => lot.variety === '' || lot.variety === askedVariety)
+	);
+
+	const fields = $derived(empaqueFields({ lots: lotsForLine, bags, staff }));
 
 	function start() {
 		draft = blankEmpaque();
+		if (lotId) draft.lotId = String(lotId);
 		errors = {};
 		formError = '';
 		open = true;
@@ -72,6 +102,19 @@
 
 	/** Roasted coffee the chosen lot is holding. */
 	const available = $derived(selectedLot(lots, draft)?.availableKilos ?? 0);
+
+	/**
+	 * Which lines this lot can actually fill.
+	 *
+	 * A reference names a variety, so a lot of Caturra cannot fill a line the
+	 * client asked for in Castillo. The panel says which ones fit rather than
+	 * refusing the rest: OTRO matches anything by definition, and the operator is
+	 * the one looking at the coffee.
+	 */
+	const fits = (variety: string) => {
+		const lot = selectedLot(lots, draft);
+		return !lot || variety === 'OTRO' || lot.variety === '' || lot.variety === variety;
+	};
 
 	/** A bag's name, for the plan panel — it lists bags, not bag ids. */
 	function bagName(bagId: number | null): string {
@@ -104,6 +147,10 @@
 			return;
 		}
 
+		// The lot and the line have to agree; the newer choice is the one that
+		// stands, so a line of another variety clears a lot that cannot fill it.
+		if (draft.lotId && !fits(reference.variety)) draft.lotId = '';
+
 		draft.referenceId = String(reference.id);
 		draft.grams = String(reference.grams);
 		draft.grind = reference.grind;
@@ -129,6 +176,11 @@
 	 */
 	let wasOpen = $state(false);
 	$effect(() => {
+		// Opened from outside — the next-step button on the order page — so the
+		// draft has to be started here: `start()` only runs when the form's own
+		// trigger is the thing that opened it.
+		if (open && !wasOpen && !edit) start();
+
 		if (open && !wasOpen && edit) {
 			draft = { ...edit.row };
 			lastLot = String(edit.row.lotId ?? '');
@@ -171,7 +223,7 @@
 
 <!-- In edit mode the caller owns the trigger: it is a button in the detail
      modal, not a "+ Nuevo" in a section header. -->
-{#if !edit}
+{#if !edit && trigger}
 	<AddButton onclick={start} />
 {/if}
 
@@ -190,7 +242,11 @@
 				<h3 class="text-xs font-semibold tracking-wide text-text uppercase">
 					Lo que pidió el cliente
 				</h3>
-				<span class="text-xs text-muted">Elija una línea para copiar la presentación</span>
+				<span class="text-xs text-muted">
+					{draft.lotId
+						? 'Atenuadas las líneas de otra variedad'
+						: 'Elija una línea para copiar la presentación'}
+				</span>
 			</header>
 
 			{#if references.length === 0}
@@ -214,14 +270,21 @@
 						<tbody>
 							{#each references as reference (reference.id)}
 								{@const chosen = String(draft.referenceId) === String(reference.id)}
+								{@const matches = fits(reference.variety)}
 								<tr
-									class="cursor-pointer border-b border-border/60 last:border-0 transition
-										{chosen ? 'bg-accent-soft' : 'hover:bg-accent-soft/40'}"
-									onclick={() => choose(reference)}
+									class="border-b border-border/60 last:border-0 transition
+										{chosen ? 'bg-accent-soft' : ''}
+										{matches ? 'cursor-pointer hover:bg-accent-soft/40' : 'cursor-not-allowed opacity-45'}"
+									onclick={() => matches && choose(reference)}
 								>
 									<td class="px-4 py-2 tabular-nums">{reference.grams} g</td>
 									<td class="px-4 py-2">{reference.grind}</td>
-									<td class="px-4 py-2">{reference.variety}</td>
+									<td class="px-4 py-2">
+										{reference.variety}
+										{#if !matches}
+											<span class="ml-1 text-xs text-muted">· otra variedad</span>
+										{/if}
+									</td>
 									<td class="px-4 py-2 text-muted">{bagName(reference.bagId)}</td>
 									<td class="px-4 py-2 tabular-nums">{reference.quantity}</td>
 									<td class="px-4 py-2 tabular-nums">{reference.packedQuantity}</td>

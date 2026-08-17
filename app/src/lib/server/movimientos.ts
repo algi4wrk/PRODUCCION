@@ -31,6 +31,8 @@ import {
   type MovementAction,
   type RawMaterial,
   type Screen,
+  type SelectionMethods,
+  type SelectionStage,
 } from "../domain/vocabulary.ts";
 
 type Db = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -70,6 +72,10 @@ export type NewMovement = {
     status: string;
     /** What the new lot is: "MALLA 14", "QUAKER". */
     kind: string;
+    /** For a lot that is not going to be sorted at all — see the quaker lot. */
+    selectionStages: SelectionStage[];
+    selectionMethods: SelectionMethods | null;
+    addQuaker: boolean | null;
   }>;
 };
 
@@ -146,6 +152,22 @@ export function recordMovimiento(tx: Db, input: NewMovement): number {
 
   // Where each leg takes its coffee from, when the caller did not say.
   const resolved = input.legs.map((leg) => resolveLeg(tx, leg));
+
+  /*
+   * Packed coffee does not move.
+   *
+   * EMPACADO is a form, not a place: the weight is in bags, labelled, against a
+   * line of the client's packaging plan. Combining it into another lot, or
+   * splitting it off, would describe bags that do not exist and leave the
+   * empaque events pointing at coffee their lot no longer holds. The way back
+   * is to undo the empaque, which puts the weight back in TOSTADO where a
+   * movimiento can reach it.
+   */
+  if (resolved.some((leg) => leg.state === "EMPACADO")) {
+    throw new Error(
+      "El café empacado no se mueve: deshaga primero el empaque.",
+    );
+  }
 
   const date = input.date ?? new Date();
 
@@ -421,6 +443,7 @@ function createDestinationLot(
       humidity: parent.humidity,
       farmId: parent.farmId,
       selectionStages: parent.selectionStages,
+      selectionMethods: parent.selectionMethods,
       roastType: parent.roastType,
       screens: parent.screens,
       addQuaker: parent.addQuaker,

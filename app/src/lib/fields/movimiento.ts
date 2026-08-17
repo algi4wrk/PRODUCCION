@@ -23,6 +23,11 @@ export type LotOption = FieldOption & {
 		selected: boolean;
 		label: string;
 		kilos: number;
+		/**
+		 * False for coffee already in bags: it is listed so the lot reads whole,
+		 * but it never moves — see `movableKilos` in `server/lookups.ts`.
+		 */
+		movable?: boolean;
 	}[];
 };
 

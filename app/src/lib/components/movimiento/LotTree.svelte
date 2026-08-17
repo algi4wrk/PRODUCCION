@@ -66,6 +66,18 @@
 	const OPTIMAL_UP_TO = 12;
 
 	/**
+	 * How many rows of boxes the diagram shows before it starts scrolling.
+	 *
+	 * An order that splits a lot four ways is already taller than the section it
+	 * sits in, and a tall diagram pushes everything below it off the page — the
+	 * movimientos it is a picture *of*, among other things. Past this it scrolls
+	 * in its own box, the way it already scrolls sideways.
+	 */
+	const ROWS_BEFORE_SCROLL = 4;
+	const ROW_GAP = 26;
+	const MAX_HEIGHT = ROWS_BEFORE_SCROLL * (BOX.height + ROW_GAP) + BOX.height;
+
+	/**
 	 * The point halfway along a polyline, by length.
 	 *
 	 * Not the middle *vertex*: an edge with two points would put its label on the
@@ -172,7 +184,7 @@
 			// Height first: the layout is vertical and gets transposed when drawn.
 			// The widest box sets the spacing, so no two of them can collide.
 			.nodeSize([BOX.height, widest])
-			.gap([26, 56]);
+			.gap([ROW_GAP, 56]);
 
 		const { width, height } = size(dag as never);
 
@@ -209,9 +221,13 @@
 </script>
 
 {#if layout}
-	<!-- Centred while it fits, scrollable when it does not: `mx-auto` on a box
-	     wider than its container would clip the left edge instead. -->
-	<div class="overflow-x-auto px-4 py-5">
+	<!--
+		Centred while it fits, scrollable when it does not — `mx-auto` on a box
+		wider than its container would clip the left edge instead. The height is
+		capped the same way: `overflow-auto` only shows a scrollbar on the axis
+		that actually overflows, so a small tree still sits there whole.
+	-->
+	<div class="overflow-auto px-4 py-5" style="max-height: {MAX_HEIGHT}px">
 		<svg
 			width={layout.width + widest}
 			height={layout.height + BOX.height}

@@ -10,6 +10,7 @@
 	import { editableLots } from '$lib/domain/editable';
 	import { linkUnlessHere } from '$lib/here';
 	import { formatDate, formatKilos } from '$lib/domain/derived';
+	import { formatSelectionMethod } from '$lib/domain/vocabulary';
 	import type { SeleccionLotOption } from '$lib/fields/seleccion';
 	import type { FieldOption } from '$lib/fields/types';
 	import type { SeleccionRow } from '$lib/server/seleccion';
@@ -21,7 +22,8 @@
 		lots,
 		staff,
 		showOrder = false,
-		readonly = false
+		readonly = false,
+		lotId
 	}: {
 		title: string;
 		/** Which sorting this section lists. */
@@ -32,6 +34,8 @@
 		staff?: readonly FieldOption[];
 		/** Adds the Orden column, for a list that spans several. */
 		showOrder?: boolean;
+		/** On a lot's page: the lot a new record opens on. */
+		lotId?: number;
 		/**
 		 * Hides Deshacer. A person's page is a record of what they did, not a
 		 * place to unwind production — and it has no action to post to.
@@ -62,6 +66,7 @@
 					// whose page this already is.
 					{ label: 'Lote', value: shown.lot, href: linkUnlessHere(`/lotes/${shown.lotCode}`) },
 					{ label: 'Etapa', value: shown.stage },
+					{ label: 'Método', value: formatSelectionMethod(shown.method) },
 					{ label: 'Peso a seleccionar', value: `${formatKilos(shown.totalKilos)} kg` },
 					{ label: 'Peso seleccionado', value: `${formatKilos(shown.netKilos)} kg` },
 					/*
@@ -108,6 +113,9 @@
 		{ key: 'date', label: 'Fecha' },
 		...(showOrder ? [{ key: 'order', label: 'Orden' }] : []),
 		{ key: 'lot', label: 'Lote' },
+		// What they are charged differently for, so it belongs in the list rather
+		// than only in the record.
+		{ key: 'method', label: 'Método' },
 		{ key: 'total', label: 'Entra', unit: 'kg', numeric: true },
 		{ key: 'net', label: 'Seleccionado', unit: 'kg', numeric: true },
 		{ key: 'removed', label: stage === 'TOSTADO' ? 'Quakers' : 'Defectos', unit: 'kg', numeric: true },
@@ -122,6 +130,7 @@
 			date: formatDate(event.date),
 			order: event.orderCode,
 			lot: event.lot,
+			method: formatSelectionMethod(event.method),
 			total: formatKilos(event.totalKilos),
 			net: formatKilos(event.netKilos),
 			removed: formatKilos(event.removedKilos),
@@ -136,7 +145,7 @@
 <Section {title} count={events.length}>
 	{#snippet action()}
 		{#if lots && staff}
-			<SeleccionForm {lots} {staff} {stage} title="{title} — nuevo registro" />
+			<SeleccionForm {lots} {staff} {stage} title="{title} — nuevo registro" {lotId} />
 		{/if}
 	{/snippet}
 
@@ -176,7 +185,11 @@
 						label: shown.lot,
 						status: '',
 						availableKilos: shown.totalKilos,
-						keepsQuakers: shown.quakerKilos !== null
+						keepsQuakers: shown.quakerKilos !== null,
+						// The prefill runs on open, so the recorded method reaches the
+						// form through the lot option — the same way the quaker decision
+						// does.
+						method: shown.method ?? ''
 					})}
 					{staff}
 					{stage}
@@ -186,6 +199,7 @@
 						id: shown.id,
 						row: {
 							lotId: String(shown.edit.lotId),
+							method: shown.edit.method ?? '',
 							totalKilos: shown.edit.totalKilos,
 							netKilos: shown.edit.netKilos,
 							removedKilos: shown.edit.removedKilos,

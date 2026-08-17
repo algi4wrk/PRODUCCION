@@ -135,7 +135,17 @@ export async function loadBoard(): Promise<BoardOrder[]> {
 		priority: order.priority,
 		status: order.status,
 		hasReferences: ordersWithReferences.has(order.id),
-		lots: (lotsByOrder.get(order.id) ?? []).sort((a, b) => a.letter.localeCompare(b.letter))
+		/*
+		 * Alphabetical, with anything already packed at the foot of its order.
+		 * A finished lot is worth seeing — the order it belongs to is still being
+		 * worked — but it needs nothing, so it should not sit between two lots
+		 * that do.
+		 */
+		lots: (lotsByOrder.get(order.id) ?? []).sort(
+			(a, b) =>
+				Number(a.status === 'EMPACADO') - Number(b.status === 'EMPACADO') ||
+				a.letter.localeCompare(b.letter)
+		)
 	}));
 
 	// Same ordering as the queue: priority first, then oldest.

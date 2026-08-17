@@ -196,6 +196,11 @@ check('AV seleccionado -> tostión', step({ rawMaterial: 'AV' }, held({ verdeSel
 check('selección verde a medias -> terminarla', step({ rawMaterial: 'AV' }, held({ verde: 10, verdeSel: 20 })), 'TERMINAR SELECCION VERDE');
 check('en proceso tostión -> terminar', step({}, held({ verde: 10, tostado: 10 })), 'TERMINAR TOSTION');
 check('tostado con selección tostado', step({ selectionStages: ['TOSTADO'] }, held({ tostado: 25 })), 'SELECCION TOSTADO');
+// El lote de quakers nace con PROCESO SELECCION = NINGUNO, así que su propio
+// pliego ya dice que no se vuelve a seleccionar: el paso sale de ahí, sin que
+// nadie pregunte por la clase del lote.
+check('los quakers no vuelven a selección',
+  step({ selectionStages: ['NINGUNO'], kind: 'QUAKER' }, held({ tostado: 1.5 })), 'MOLIENDA/EMPAQUE');
 // AGREGAR QUAKER dice qué pasa con lo que retira una selección; un lote que no
 // se está seleccionando no tiene quakers de qué hablar.
 check('tostado con quaker sigue igual', step({ addQuaker: true }, held({ tostado: 25 })), 'MOLIENDA/EMPAQUE');
@@ -264,7 +269,9 @@ const corrected = summarise([entry(46, { eventType: 'recepcion' }), entry(-5), e
 check('la compensación devuelve el saldo', corrected.balances.verde, 46);
 
 // Qué sale del tablero.
-check('empacado sale del tablero', isActiveLot('EMPACADO'), false);
+// Un lote empacado se queda: está terminado, no ausente, y el tablero lo manda
+// al final de su orden en vez de esconderlo.
+check('empacado se queda en el tablero', isActiveLot('EMPACADO'), true);
 check('combinado sale del tablero', isActiveLot('COMBINADO'), false);
 check('en proceso sigue en el tablero', isActiveLot('EN PROCESO TOSTION'), true);
 
@@ -280,6 +287,9 @@ check('selección tostado es la otra', stepTone('SELECCION TOSTADO'), 'seleccion
 check('terminar selección tostado va con la tostada',
 	stepTone('TERMINAR SELECCION TOSTADO'), 'seleccionTostado');
 check('molienda y empaque comparten tono', stepTone('MOLIENDA/EMPAQUE'), 'empaque');
+// Terminado tiene el suyo, y no cae en ninguno de los de trabajo: es lo que
+// distingue de lejos un lote listo de uno que todavía espera algo.
+check('terminado tiene su propio color', stepTone('TERMINADO'), 'terminado');
 
 console.log('\nContra la base de datos sembrada');
 
@@ -569,6 +579,47 @@ console.log('\nÁrbol de un lote');
 	check('un lote solo no arrastra a nadie', focusLineage(graph, 5).nodes.length, 0);
 }
 
+console.log('\nSecciones de un lote');
+
+{
+	const { lotSections } = await import('../src/lib/domain/derived.ts');
+	const spec = {
+		rawMaterial: 'CPS' as const,
+		selectionStages: ['VERDE', 'TOSTADO'] as never,
+		roastType: 'Media/Media - City' as never
+	};
+
+	// Un lote recién recibido muestra el camino por delante.
+	const fresco = lotSections(spec, received());
+	check('pergamino muestra trilla', fresco.trilla, true);
+	check('y la tostión que le espera', fresco.tostion, true);
+
+	// Un lote que nació tostado hereda la especificación del padre, pero ya no
+	// tiene café que tostar: la sección sobra.
+	const nacidoTostado = lotSections(
+		{ ...spec, rawMaterial: 'AV' as const },
+		held({ tostado: 8 })
+	);
+	check('un lote ya tostado no muestra tostión', nacidoTostado.tostion, false);
+	check('ni trilla', nacidoTostado.trilla, false);
+	check('pero sí lo que le queda por delante', nacidoTostado.seleccionTostado, true);
+	check('y el empaque', nacidoTostado.empaque, true);
+
+	// Lo que se registró se sigue viendo, aunque ya no quede café que lo admita.
+	const conHistoria = lotSections(
+		{ ...spec, rawMaterial: 'AV' as const },
+		held({ tostado: 8 }, { events: ['recepcion', 'tostion'] })
+	);
+	check('lo ya registrado se sigue mostrando', conHistoria.tostion, true);
+
+	// Los quakers no se vuelven a seleccionar, así que no se ofrece.
+	const quaker = lotSections(
+		{ ...spec, rawMaterial: 'AV' as const, kind: 'QUAKER' },
+		held({ tostado: 1.5 })
+	);
+	check('un lote de quakers no ofrece selección', quaker.seleccionTostado, false);
+}
+
 console.log('\nSeparar un lote que sostiene dos cafés');
 
 {
@@ -623,6 +674,100 @@ console.log('\nSeparar un lote que sostiene dos cafés');
 	const sorted = (await live()).find((lot) => lot.letter === 'E')!;
 	check('separar lo seleccionado da un lote seleccionado',
 		lotStatus(sorted, await lotLedger(sorted.id)), 'AV SELECCIONADO');
+}
+
+console.log('\nMétodo de selección');
+
+{
+	const { recordSeleccion, listSelecciones } = await import('../src/lib/server/seleccion.ts');
+	const { orders: ordersTable } = await import('../src/lib/server/db/schema.ts');
+	const { eq } = await import('drizzle-orm');
+
+	const [order] = await db.select().from(ordersTable).where(eq(ordersTable.code, 'MAH-M0728A'));
+	const lotsOf = async () =>
+		(await db.select().from(lotsTable).where(eq(lotsTable.orderId, order.id)))
+			.filter((lot) => !lot.deletedAt);
+
+	// B llega en almendra y el cliente pidió selección verde: se le pone el
+	// método que habría traído desde el formulario del lote.
+	const B = (await lotsOf()).find((lot) => lot.letter === 'B')!;
+	db.update(lotsTable)
+		.set({ selectionMethods: { VERDE: 'Electronica', TOSTADO: 'Manual' } })
+		.where(eq(lotsTable.id, B.id))
+		.run();
+
+	// Sin decir método, el evento hereda el de su etapa — no el de la otra.
+	// Fechas explícitas: la lista viene de la más nueva a la más vieja, y dos
+	// registros escritos en el mismo milisegundo no tendrían orden.
+	const ayer = new Date(Date.now() - 86_400_000);
+	await recordSeleccion({ lotId: B.id, totalKilos: 5, netKilos: 4.8, staffId: 1, date: ayer });
+	const heredado = (await listSelecciones({ lotId: B.id }, 'VERDE'))[0];
+	check('hereda el método de la etapa', heredado.method, 'Electronica');
+
+	// Dicho en el evento, manda el evento: la máquina puede haberse dañado.
+	await recordSeleccion({
+		lotId: B.id,
+		totalKilos: 5,
+		netKilos: 4.9,
+		method: 'Manual',
+		staffId: 1
+	});
+	const dicho = (await listSelecciones({ lotId: B.id }, 'VERDE'))[0];
+	check('lo dicho en el evento manda', dicho.method, 'Manual');
+
+	// Un lote sin especificación no inventa ninguno.
+	const A = (await lotsOf()).find((lot) => lot.letter === 'A')!;
+	db.update(lotsTable).set({ selectionMethods: null }).where(eq(lotsTable.id, A.id)).run();
+	// A llega en pergamino: se trilla primero para que quede almendra que seleccionar.
+	const { recordTrilla } = await import('../src/lib/server/trilla.ts');
+	await recordTrilla({ lotId: A.id, parchmentKilos: 20, greenKilos: 16, screens: [], staffId: 1 });
+	await recordSeleccion({ lotId: A.id, totalKilos: 10, netKilos: 9.5, staffId: 1 });
+	const sinMetodo = (await listSelecciones({ lotId: A.id }, 'VERDE'))[0];
+	check('sin especificación no se inventa', sinMetodo.method, null);
+}
+
+console.log('\nEl lote de quakers');
+
+{
+	const { recordSeleccion } = await import('../src/lib/server/seleccion.ts');
+	const { recordTostion } = await import('../src/lib/server/tostion.ts');
+	const { lotLedger } = await import('../src/lib/server/ledger.ts');
+	const { orders: ordersTable } = await import('../src/lib/server/db/schema.ts');
+	const { eq } = await import('drizzle-orm');
+
+	// B de MAH-M0729A llega en almendra, pide selección tostada y guarda quakers.
+	// (A la usan bloques anteriores; este necesita un lote intacto.)
+	const [order] = await db.select().from(ordersTable).where(eq(ordersTable.code, 'MAH-M0729A'));
+	const lotsOf = async () =>
+		(await db.select().from(lotsTable).where(eq(lotsTable.orderId, order.id)))
+			.filter((lot) => !lot.deletedAt);
+	const B = (await lotsOf()).find((lot) => lot.letter === 'B')!;
+
+	await recordTostion({
+		lotId: B.id,
+		roastType: 'Media Baja - American',
+		batchKilos: 12,
+		roastedKilos: 10,
+		staffId: 1
+	});
+	await recordSeleccion({
+		lotId: B.id,
+		totalKilos: 10,
+		netKilos: 9,
+		removedKilos: 1,
+		keepQuaker: true,
+		staffId: 1
+	});
+
+	// Nace con su propio pliego, no con el del lote del que salió.
+	const quaker = (await lotsOf()).find((lot) => lot.kind === 'QUAKER')!;
+	check('nace sin selección pendiente', quaker.selectionStages, ['NINGUNO']);
+	check('ni método que aplicar', quaker.selectionMethods, null);
+	check('ni quakers que guardar', quaker.addQuaker, false);
+	// Y el paso siguiente cae solo, sin preguntar por la clase del lote.
+	check('su paso siguiente es empaque',
+		nextStep(quaker as never, { hasReferences: true, ledger: await lotLedger(quaker.id) }),
+		'MOLIENDA/EMPAQUE');
 }
 
 // Los bloques de arriba escriben en la base: crean lotes, los deshacen y dejan

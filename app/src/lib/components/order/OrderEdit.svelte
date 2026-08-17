@@ -73,12 +73,13 @@
 <button
 	type="button"
 	onclick={edit}
-	class="flex items-center gap-1.5 rounded-md px-2 py-1 text-sm text-muted transition
+	title="Editar"
+		class="hint rounded-md p-1.5 text-muted transition
 		hover:bg-amber-50 hover:text-amber-700
 		dark:hover:bg-amber-950/50 dark:hover:text-amber-300"
 >
-	<Icon name="pencil" />
-	Editar
+	<Icon name="pencil" size={18} />
+	<span class="sr-only">Editar</span>
 </button>
 
 <Modal title="Editar orden" bind:open size="wide">
